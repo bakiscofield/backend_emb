@@ -30,6 +30,34 @@ else
     exit 1
 fi
 
+# Fonction pour vérifier si un certificat est valide (expire dans plus de 30 jours)
+check_cert_validity() {
+    local domain=$1
+    local cert_file="certbot/conf/live/$domain/fullchain.pem"
+
+    if [ ! -f "$cert_file" ]; then
+        return 1  # Certificat n'existe pas
+    fi
+
+    # Vérifier la date d'expiration
+    local expiry_date=$(openssl x509 -enddate -noout -in "$cert_file" 2>/dev/null | cut -d= -f2)
+
+    if [ -z "$expiry_date" ]; then
+        return 1  # Impossible de lire le certificat
+    fi
+
+    local expiry_epoch=$(date -d "$expiry_date" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$expiry_date" +%s 2>/dev/null)
+    local now_epoch=$(date +%s)
+    local days_left=$(( ($expiry_epoch - $now_epoch) / 86400 ))
+
+    if [ $days_left -gt 30 ]; then
+        echo "$days_left"
+        return 0  # Certificat valide
+    else
+        return 1  # Certificat expire bientôt
+    fi
+}
+
 echo "📋 Vérification des prérequis..."
 echo ""
 
@@ -42,90 +70,74 @@ fi
 
 echo -e "${GREEN}✓ Nginx en cours d'exécution${NC}"
 
-# Vérifier les DNS
+# Vérifier les certificats
 echo ""
-echo "🔍 Vérification DNS..."
-BACKEND_IP=$(dig +short $BACKEND_DOMAIN | tail -n1)
-FRONTEND_IP=$(dig +short $FRONTEND_DOMAIN | tail -n1)
-SERVER_IP=$(curl -s ifconfig.me)
+echo "🔍 Vérification des certificats SSL..."
 
-echo "   $BACKEND_DOMAIN → $BACKEND_IP"
-echo "   $FRONTEND_DOMAIN → $FRONTEND_IP"
-echo "   Serveur → $SERVER_IP"
+NEED_BACKEND_CERT=false
+NEED_FRONTEND_CERT=false
 
-if [ "$BACKEND_IP" != "$SERVER_IP" ] || [ "$FRONTEND_IP" != "$SERVER_IP" ]; then
-    echo -e "${YELLOW}⚠️  ATTENTION: Les DNS ne pointent pas vers ce serveur${NC}"
-    echo "   Certbot risque d'échouer."
-    read -p "Continuer quand même ? (y/N) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
-    fi
+# Vérifier certificat backend
+if days_left=$(check_cert_validity "$BACKEND_DOMAIN"); then
+    echo -e "${GREEN}✓ Certificat backend valide (expire dans $days_left jours)${NC}"
+else
+    echo -e "${YELLOW}⚠️  Certificat backend absent ou expire bientôt${NC}"
+    NEED_BACKEND_CERT=true
 fi
 
-# Vérifier si les certificats existent déjà
-echo ""
-echo "🔍 Vérification des certificats existants..."
-
-BACKEND_CERT_EXISTS=false
-FRONTEND_CERT_EXISTS=false
-
-if [ -f "certbot/conf/live/$BACKEND_DOMAIN/fullchain.pem" ]; then
-    BACKEND_CERT_EXISTS=true
-    echo -e "${GREEN}✓ Certificat backend trouvé${NC}"
+# Vérifier certificat frontend
+if days_left=$(check_cert_validity "$FRONTEND_DOMAIN"); then
+    echo -e "${GREEN}✓ Certificat frontend valide (expire dans $days_left jours)${NC}"
+else
+    echo -e "${YELLOW}⚠️  Certificat frontend absent ou expire bientôt${NC}"
+    NEED_FRONTEND_CERT=true
 fi
 
-if [ -f "certbot/conf/live/$FRONTEND_DOMAIN/fullchain.pem" ]; then
-    FRONTEND_CERT_EXISTS=true
-    echo -e "${GREEN}✓ Certificat frontend trouvé${NC}"
-fi
-
-# Si les deux certificats existent déjà, pas besoin de Certbot
-if [ "$BACKEND_CERT_EXISTS" = true ] && [ "$FRONTEND_CERT_EXISTS" = true ]; then
+# Si tous les certificats sont valides, skip Certbot
+if [ "$NEED_BACKEND_CERT" = false ] && [ "$NEED_FRONTEND_CERT" = false ]; then
     echo ""
-    echo -e "${GREEN}✓ Tous les certificats SSL sont déjà présents${NC}"
+    echo -e "${GREEN}✓ Tous les certificats sont valides${NC}"
     echo "Passage directement à l'activation HTTPS..."
 else
-    # Obtenir les certificats manquants
-    if [ "$BACKEND_CERT_EXISTS" = false ]; then
+    # Obtenir ou renouveler les certificats nécessaires
+    echo ""
+    echo -e "${BLUE}Obtention/renouvellement des certificats...${NC}"
+
+    if [ "$NEED_BACKEND_CERT" = true ]; then
         echo ""
-        echo "🔒 Obtention du certificat pour $BACKEND_DOMAIN..."
+        echo "🔒 Certificat pour $BACKEND_DOMAIN..."
         $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
             --webroot \
             --webroot-path=/var/www/certbot \
             --email $EMAIL \
             --agree-tos \
             --no-eff-email \
-            --non-interactive \
-            --keep-until-expiring \
+            --force-renewal \
             -d $BACKEND_DOMAIN
 
         if [ $? -ne 0 ]; then
             echo -e "${RED}❌ Échec pour $BACKEND_DOMAIN${NC}"
             exit 1
         fi
-
         echo -e "${GREEN}✓ Certificat backend obtenu${NC}"
     fi
 
-    if [ "$FRONTEND_CERT_EXISTS" = false ]; then
+    if [ "$NEED_FRONTEND_CERT" = true ]; then
         echo ""
-        echo "🔒 Obtention du certificat pour $FRONTEND_DOMAIN..."
+        echo "🔒 Certificat pour $FRONTEND_DOMAIN..."
         $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
             --webroot \
             --webroot-path=/var/www/certbot \
             --email $EMAIL \
             --agree-tos \
             --no-eff-email \
-            --non-interactive \
-            --keep-until-expiring \
+            --force-renewal \
             -d $FRONTEND_DOMAIN
 
         if [ $? -ne 0 ]; then
             echo -e "${RED}❌ Échec pour $FRONTEND_DOMAIN${NC}"
             exit 1
         fi
-
         echo -e "${GREEN}✓ Certificat frontend obtenu${NC}"
     fi
 fi
