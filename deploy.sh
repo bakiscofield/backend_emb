@@ -142,14 +142,8 @@ fi
 echo ""
 echo "🛑 Arrêt des anciens conteneurs..."
 $DOCKER_COMPOSE -f $COMPOSE_FILE down 2>/dev/null
-docker stop emb-backend emb-nginx emb-certbot 2>/dev/null
-docker rm emb-backend emb-nginx emb-certbot 2>/dev/null
-
-# Arrêter Nginx système s'il tourne
-if systemctl is-active --quiet nginx 2>/dev/null; then
-    echo -e "${YELLOW}⚠️  Nginx système détecté, arrêt...${NC}"
-    sudo systemctl stop nginx
-fi
+docker stop emb-backend emb-frontend 2>/dev/null
+docker rm emb-backend emb-frontend 2>/dev/null
 
 echo ""
 echo "🔨 Construction des images backend et frontend..."
@@ -163,8 +157,8 @@ fi
 echo -e "${GREEN}✓ Images construites${NC}"
 
 echo ""
-echo "🚀 Démarrage du backend, frontend et Nginx..."
-$DOCKER_COMPOSE -f $COMPOSE_FILE up -d emb-backend emb-frontend nginx
+echo "🚀 Démarrage du backend et frontend..."
+$DOCKER_COMPOSE -f $COMPOSE_FILE up -d emb-backend emb-frontend
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Erreur lors du démarrage${NC}"
@@ -178,48 +172,28 @@ echo -e "${GREEN}✓ Conteneurs démarrés${NC}"
 echo "⏳ Attente du démarrage (20 secondes)..."
 sleep 20
 
-# Gestion SSL
-if [ "$SSL_BACKEND_EXISTS" = true ] && [ "$SSL_FRONTEND_EXISTS" = true ]; then
-    # Certificats déjà présents - déploiement rapide
+# Démarrer Nginx système si installé
+if command -v nginx &> /dev/null && [ -f /etc/nginx/sites-available/emb ]; then
     echo ""
-    echo -e "${GREEN}✓ Certificats SSL valides détectés${NC}"
-    echo "🔄 Démarrage de Certbot pour renouvellement automatique..."
-    $DOCKER_COMPOSE -f $COMPOSE_FILE up -d certbot
+    echo "🔧 Démarrage de Nginx système..."
+    sudo systemctl start nginx
+    sudo systemctl enable nginx
+    echo -e "${GREEN}✓ Nginx système démarré${NC}"
+    echo ""
+    echo "Pour configurer SSL avec Nginx système, exécutez :"
+    echo -e "${BLUE}sudo ./setup-nginx-system.sh${NC}"
 else
-    # Certificats manquants - configuration initiale requise
     echo ""
-    echo -e "${YELLOW}⚠️  CERTIFICATS SSL MANQUANTS${NC}"
+    echo -e "${YELLOW}⚠️  Nginx système non configuré${NC}"
     echo ""
-    echo "Pour obtenir les certificats SSL automatiquement :"
-    echo "1. Assurez-vous que les DNS pointent vers ce serveur :"
-    echo "   - $BACKEND_DOMAIN"
-    echo "   - $FRONTEND_DOMAIN"
-    echo ""
-    echo "2. Exécutez ces commandes :"
-    echo ""
-    echo -e "${BLUE}# Pour le backend :${NC}"
-    echo "docker compose -f $COMPOSE_FILE run --rm certbot certonly \\"
-    echo "  --webroot --webroot-path=/var/www/certbot \\"
-    echo "  --email $EMAIL --agree-tos --no-eff-email \\"
-    echo "  -d $BACKEND_DOMAIN"
-    echo ""
-    echo -e "${BLUE}# Pour le frontend :${NC}"
-    echo "docker compose -f $COMPOSE_FILE run --rm certbot certonly \\"
-    echo "  --webroot --webroot-path=/var/www/certbot \\"
-    echo "  --email $EMAIL --agree-tos --no-eff-email \\"
-    echo "  -d $FRONTEND_DOMAIN"
-    echo ""
-    echo -e "${BLUE}# Puis rechargez Nginx :${NC}"
-    echo "docker compose -f $COMPOSE_FILE exec nginx nginx -s reload"
-    echo "docker compose -f $COMPOSE_FILE up -d certbot"
-    echo ""
-    echo -e "${YELLOW}L'application démarrera en HTTP uniquement${NC}"
+    echo "Pour utiliser Nginx système avec SSL automatique (certbot --nginx) :"
+    echo -e "${BLUE}sudo ./setup-nginx-system.sh${NC}"
 fi
 
 # Vérifier que tout tourne
 echo ""
 echo "🔍 Vérification des conteneurs..."
-if docker ps | grep -q emb-backend && docker ps | grep -q emb-frontend && docker ps | grep -q emb-nginx; then
+if docker ps | grep -q emb-backend && docker ps | grep -q emb-frontend; then
     echo -e "${GREEN}✓ Tous les conteneurs fonctionnent${NC}"
 else
     echo -e "${RED}❌ Certains conteneurs ne fonctionnent pas${NC}"
@@ -228,37 +202,36 @@ else
     exit 1
 fi
 
+# Vérifier Nginx système
+NGINX_STATUS="❌ Non configuré"
+if systemctl is-active --quiet nginx 2>/dev/null; then
+    NGINX_STATUS="✅ Actif"
+fi
+
 echo ""
 echo "╔═══════════════════════════════════════════════════════╗"
 echo "║                                                       ║"
 echo "║            ✅ Déploiement réussi !                    ║"
 echo "║                                                       ║"
-if [ "$SSL_BACKEND_EXISTS" = true ] && [ "$SSL_FRONTEND_EXISTS" = true ]; then
-echo "║  🌐 Backend disponible sur :                         ║"
-echo "║     https://emb_back.alicebot.me                     ║"
+echo "║  📦 Services Docker :                                ║"
+echo "║     • Backend : localhost:5005                       ║"
+echo "║     • Frontend : localhost:3000                      ║"
 echo "║                                                       ║"
-echo "║  🌐 Frontend disponible sur :                        ║"
-echo "║     https://emb_front.alicebot.me                    ║"
-echo "║     (HTTP redirigé vers HTTPS)                       ║"
+echo "║  🌐 Nginx système : $NGINX_STATUS                    ║"
+if systemctl is-active --quiet nginx 2>/dev/null; then
+echo "║     • https://emb_back.alicebot.me                   ║"
+echo "║     • https://emb_front.alicebot.me                  ║"
 else
-echo "║  🌐 Backend : http://emb_back.alicebot.me            ║"
-echo "║  🌐 Frontend : http://emb_front.alicebot.me          ║"
+echo "║                                                       ║"
+echo "║  Pour activer SSL avec certbot --nginx :            ║"
+echo "║     sudo ./setup-nginx-system.sh                     ║"
 fi
 echo "║                                                       ║"
 echo "║  📊 Commandes utiles :                               ║"
-echo "║     $DOCKER_COMPOSE -f $COMPOSE_FILE logs -f         ║"
-echo "║     $DOCKER_COMPOSE -f $COMPOSE_FILE ps              ║"
-echo "║     $DOCKER_COMPOSE -f $COMPOSE_FILE restart         ║"
-echo "║     $DOCKER_COMPOSE -f $COMPOSE_FILE down            ║"
-echo "║                                                       ║"
-echo "║  🧪 Tester :                                         ║"
-if [ "$SSL_BACKEND_EXISTS" = true ] && [ "$SSL_FRONTEND_EXISTS" = true ]; then
-echo "║     curl https://emb_back.alicebot.me                ║"
-echo "║     curl https://emb_front.alicebot.me               ║"
-else
-echo "║     curl http://emb_back.alicebot.me                 ║"
-echo "║     curl http://emb_front.alicebot.me                ║"
-fi
+echo "║     docker compose -f $COMPOSE_FILE logs -f          ║"
+echo "║     docker compose -f $COMPOSE_FILE ps               ║"
+echo "║     docker compose -f $COMPOSE_FILE restart          ║"
+echo "║     sudo systemctl status nginx                      ║"
 echo "║                                                       ║"
 echo "╚═══════════════════════════════════════════════════════╝"
 echo ""
