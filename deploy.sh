@@ -78,33 +78,62 @@ if [ -f "certbot/conf/live/$FRONTEND_DOMAIN/fullchain.pem" ]; then
     SSL_FRONTEND_EXISTS=true
 fi
 
-# Si les deux certificats existent, utiliser directement la config SSL
+# Vérifier l'état SSL et préparer la configuration Nginx
 if [ "$SSL_BACKEND_EXISTS" = true ] && [ "$SSL_FRONTEND_EXISTS" = true ]; then
     echo -e "${GREEN}✓ Configuration SSL complète détectée${NC}"
-    # S'assurer que emb-unified.conf est en place (pas emb-temp.conf)
+    # Utiliser emb-unified.conf avec HTTPS
     rm -f nginx/conf.d/emb-temp.conf
-elif [ "$SSL_BACKEND_EXISTS" = false ] || [ "$SSL_FRONTEND_EXISTS" = false ]; then
-    echo -e "${YELLOW}⚠️  Première installation ou certificats manquants - SSL sera configuré${NC}"
-    FIRST_DEPLOY=true
+    if [ -f "nginx/conf.d/emb-unified.conf.disabled" ]; then
+        mv nginx/conf.d/emb-unified.conf.disabled nginx/conf.d/emb-unified.conf
+    fi
+else
+    echo -e "${YELLOW}⚠️  Certificats SSL manquants - démarrage en HTTP${NC}"
 
-    # Créer config Nginx temporaire (sans SSL pour obtenir les certificats)
-    cat > nginx/conf.d/emb-temp.conf <<EOF
-# Temporaire pour obtenir les certificats SSL
+    # Créer config Nginx HTTP seulement (sans SSL)
+    cat > nginx/conf.d/emb-http-only.conf <<'EOF'
+# Configuration HTTP uniquement (sans SSL)
 server {
     listen 80;
-    server_name $BACKEND_DOMAIN $FRONTEND_DOMAIN;
+    server_name emb_back.alicebot.me;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
 
     location / {
-        return 200 'Configuration temporaire pour obtenir SSL';
-        add_header Content-Type text/plain;
+        proxy_pass http://emb-backend:5005;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+
+server {
+    listen 80;
+    server_name emb_front.alicebot.me;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        proxy_pass http://emb-frontend:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_cache_bypass $http_upgrade;
     }
 }
 EOF
-    # Temporairement renommer emb-unified.conf pour éviter les erreurs SSL
+
+    # Désactiver emb-unified.conf (qui requiert SSL)
     if [ -f "nginx/conf.d/emb-unified.conf" ]; then
         mv nginx/conf.d/emb-unified.conf nginx/conf.d/emb-unified.conf.disabled
     fi
@@ -149,92 +178,42 @@ echo -e "${GREEN}✓ Conteneurs démarrés${NC}"
 echo "⏳ Attente du démarrage (20 secondes)..."
 sleep 20
 
-# Si première installation, obtenir les certificats SSL
-if [ "$FIRST_DEPLOY" = true ]; then
+# Gestion SSL
+if [ "$SSL_BACKEND_EXISTS" = true ] && [ "$SSL_FRONTEND_EXISTS" = true ]; then
+    # Certificats déjà présents - déploiement rapide
     echo ""
-    echo "🔒 Obtention des certificats SSL..."
-    echo -e "${BLUE}   Domaines: $BACKEND_DOMAIN, $FRONTEND_DOMAIN${NC}"
-    echo -e "${BLUE}   Email: $EMAIL${NC}"
-
-    # Obtenir certificat backend si nécessaire
-    if [ "$SSL_BACKEND_EXISTS" = false ]; then
-        echo ""
-        echo "📝 Certificat pour $BACKEND_DOMAIN..."
-        $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
-            --webroot \
-            --webroot-path=/var/www/certbot \
-            --email $EMAIL \
-            --agree-tos \
-            --no-eff-email \
-            --keep-until-expiring \
-            --non-interactive \
-            -d $BACKEND_DOMAIN
-
-        if [ $? -eq 0 ]; then
-            echo -e "${GREEN}✓ Certificat backend obtenu !${NC}"
-            SSL_BACKEND_EXISTS=true
-        else
-            echo -e "${RED}❌ Échec certificat backend${NC}"
-        fi
-    fi
-
-    # Obtenir certificat frontend si nécessaire
-    if [ "$SSL_FRONTEND_EXISTS" = false ]; then
-        echo ""
-        echo "📝 Certificat pour $FRONTEND_DOMAIN..."
-        $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
-            --webroot \
-            --webroot-path=/var/www/certbot \
-            --email $EMAIL \
-            --agree-tos \
-            --no-eff-email \
-            --keep-until-expiring \
-            --non-interactive \
-            -d $FRONTEND_DOMAIN
-
-        if [ $? -eq 0 ]; then
-            echo -e "${GREEN}✓ Certificat frontend obtenu !${NC}"
-            SSL_FRONTEND_EXISTS=true
-        else
-            echo -e "${RED}❌ Échec certificat frontend${NC}"
-        fi
-    fi
-
-    # Si les deux certificats sont obtenus, activer la config complète
-    if [ "$SSL_BACKEND_EXISTS" = true ] && [ "$SSL_FRONTEND_EXISTS" = true ]; then
-        echo ""
-        echo "🔧 Activation de la configuration Nginx avec SSL..."
-
-        # Supprimer la config temporaire
-        rm -f nginx/conf.d/emb-temp.conf
-
-        # Restaurer emb-unified.conf si elle était désactivée
-        if [ -f "nginx/conf.d/emb-unified.conf.disabled" ]; then
-            mv nginx/conf.d/emb-unified.conf.disabled nginx/conf.d/emb-unified.conf
-        fi
-
-        # Recharger Nginx
-        echo "🔄 Rechargement de Nginx..."
-        $DOCKER_COMPOSE -f $COMPOSE_FILE exec nginx nginx -s reload
-
-        # Démarrer Certbot pour renouvellement auto
-        $DOCKER_COMPOSE -f $COMPOSE_FILE up -d certbot
-
-        echo -e "${GREEN}✓ SSL configuré avec succès pour les deux domaines !${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Impossible d'obtenir tous les certificats SSL${NC}"
-        echo -e "${YELLOW}   L'application fonctionnera en HTTP${NC}"
-        echo ""
-        echo "Vérifiez que:"
-        echo "  - Les domaines $BACKEND_DOMAIN et $FRONTEND_DOMAIN pointent vers ce serveur"
-        echo "  - Les ports 80 et 443 sont ouverts"
-    fi
-else
-    # Mise à jour : certificats SSL déjà présents, juste redémarrer Certbot
-    echo ""
-    echo "🔄 Redémarrage de Certbot pour renouvellement automatique..."
+    echo -e "${GREEN}✓ Certificats SSL valides détectés${NC}"
+    echo "🔄 Démarrage de Certbot pour renouvellement automatique..."
     $DOCKER_COMPOSE -f $COMPOSE_FILE up -d certbot
-    echo -e "${GREEN}✓ Déploiement avec SSL existant${NC}"
+else
+    # Certificats manquants - configuration initiale requise
+    echo ""
+    echo -e "${YELLOW}⚠️  CERTIFICATS SSL MANQUANTS${NC}"
+    echo ""
+    echo "Pour obtenir les certificats SSL automatiquement :"
+    echo "1. Assurez-vous que les DNS pointent vers ce serveur :"
+    echo "   - $BACKEND_DOMAIN"
+    echo "   - $FRONTEND_DOMAIN"
+    echo ""
+    echo "2. Exécutez ces commandes :"
+    echo ""
+    echo -e "${BLUE}# Pour le backend :${NC}"
+    echo "docker compose -f $COMPOSE_FILE run --rm certbot certonly \\"
+    echo "  --webroot --webroot-path=/var/www/certbot \\"
+    echo "  --email $EMAIL --agree-tos --no-eff-email \\"
+    echo "  -d $BACKEND_DOMAIN"
+    echo ""
+    echo -e "${BLUE}# Pour le frontend :${NC}"
+    echo "docker compose -f $COMPOSE_FILE run --rm certbot certonly \\"
+    echo "  --webroot --webroot-path=/var/www/certbot \\"
+    echo "  --email $EMAIL --agree-tos --no-eff-email \\"
+    echo "  -d $FRONTEND_DOMAIN"
+    echo ""
+    echo -e "${BLUE}# Puis rechargez Nginx :${NC}"
+    echo "docker compose -f $COMPOSE_FILE exec nginx nginx -s reload"
+    echo "docker compose -f $COMPOSE_FILE up -d certbot"
+    echo ""
+    echo -e "${YELLOW}L'application démarrera en HTTP uniquement${NC}"
 fi
 
 # Vérifier que tout tourne
