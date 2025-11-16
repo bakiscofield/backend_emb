@@ -67,18 +67,24 @@ SSL_BACKEND_EXISTS=false
 SSL_FRONTEND_EXISTS=false
 FIRST_DEPLOY=false
 
-if [ -d "certbot/conf/live/$BACKEND_DOMAIN" ]; then
+# Vérifier les certificats existants
+if [ -f "certbot/conf/live/$BACKEND_DOMAIN/fullchain.pem" ]; then
     echo -e "${GREEN}✓ Certificat SSL backend déjà présent${NC}"
     SSL_BACKEND_EXISTS=true
 fi
 
-if [ -d "certbot/conf/live/$FRONTEND_DOMAIN" ]; then
+if [ -f "certbot/conf/live/$FRONTEND_DOMAIN/fullchain.pem" ]; then
     echo -e "${GREEN}✓ Certificat SSL frontend déjà présent${NC}"
     SSL_FRONTEND_EXISTS=true
 fi
 
-if [ "$SSL_BACKEND_EXISTS" = false ] || [ "$SSL_FRONTEND_EXISTS" = false ]; then
-    echo -e "${YELLOW}⚠️  Première installation - SSL sera configuré${NC}"
+# Si les deux certificats existent, utiliser directement la config SSL
+if [ "$SSL_BACKEND_EXISTS" = true ] && [ "$SSL_FRONTEND_EXISTS" = true ]; then
+    echo -e "${GREEN}✓ Configuration SSL complète détectée${NC}"
+    # S'assurer que emb-unified.conf est en place (pas emb-temp.conf)
+    rm -f nginx/conf.d/emb-temp.conf
+elif [ "$SSL_BACKEND_EXISTS" = false ] || [ "$SSL_FRONTEND_EXISTS" = false ]; then
+    echo -e "${YELLOW}⚠️  Première installation ou certificats manquants - SSL sera configuré${NC}"
     FIRST_DEPLOY=true
 
     # Créer config Nginx temporaire (sans SSL pour obtenir les certificats)
@@ -98,6 +104,10 @@ server {
     }
 }
 EOF
+    # Temporairement renommer emb-unified.conf pour éviter les erreurs SSL
+    if [ -f "nginx/conf.d/emb-unified.conf" ]; then
+        mv nginx/conf.d/emb-unified.conf nginx/conf.d/emb-unified.conf.disabled
+    fi
 fi
 
 echo ""
@@ -150,19 +160,22 @@ if [ "$FIRST_DEPLOY" = true ]; then
     if [ "$SSL_BACKEND_EXISTS" = false ]; then
         echo ""
         echo "📝 Certificat pour $BACKEND_DOMAIN..."
-        $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
+        OUTPUT=$($DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
             --webroot \
             --webroot-path=/var/www/certbot \
             --email $EMAIL \
             --agree-tos \
             --no-eff-email \
-            -d $BACKEND_DOMAIN
+            -d $BACKEND_DOMAIN 2>&1)
 
-        if [ $? -eq 0 ]; then
-            echo -e "${GREEN}✓ Certificat backend obtenu !${NC}"
+        EXIT_CODE=$?
+
+        if [ $EXIT_CODE -eq 0 ] || echo "$OUTPUT" | grep -q "Certificate not yet due for renewal"; then
+            echo -e "${GREEN}✓ Certificat backend OK !${NC}"
             SSL_BACKEND_EXISTS=true
         else
             echo -e "${RED}❌ Échec certificat backend${NC}"
+            echo "$OUTPUT"
         fi
     fi
 
@@ -170,19 +183,22 @@ if [ "$FIRST_DEPLOY" = true ]; then
     if [ "$SSL_FRONTEND_EXISTS" = false ]; then
         echo ""
         echo "📝 Certificat pour $FRONTEND_DOMAIN..."
-        $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
+        OUTPUT=$($DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
             --webroot \
             --webroot-path=/var/www/certbot \
             --email $EMAIL \
             --agree-tos \
             --no-eff-email \
-            -d $FRONTEND_DOMAIN
+            -d $FRONTEND_DOMAIN 2>&1)
 
-        if [ $? -eq 0 ]; then
-            echo -e "${GREEN}✓ Certificat frontend obtenu !${NC}"
+        EXIT_CODE=$?
+
+        if [ $EXIT_CODE -eq 0 ] || echo "$OUTPUT" | grep -q "Certificate not yet due for renewal"; then
+            echo -e "${GREEN}✓ Certificat frontend OK !${NC}"
             SSL_FRONTEND_EXISTS=true
         else
             echo -e "${RED}❌ Échec certificat frontend${NC}"
+            echo "$OUTPUT"
         fi
     fi
 
@@ -194,8 +210,12 @@ if [ "$FIRST_DEPLOY" = true ]; then
         # Supprimer la config temporaire
         rm -f nginx/conf.d/emb-temp.conf
 
-        # La config unifiée (emb-unified.conf) est déjà présente
-        # Il suffit de recharger Nginx
+        # Restaurer emb-unified.conf si elle était désactivée
+        if [ -f "nginx/conf.d/emb-unified.conf.disabled" ]; then
+            mv nginx/conf.d/emb-unified.conf.disabled nginx/conf.d/emb-unified.conf
+        fi
+
+        # Recharger Nginx
         echo "🔄 Rechargement de Nginx..."
         $DOCKER_COMPOSE -f $COMPOSE_FILE exec nginx nginx -s reload
 
@@ -212,9 +232,11 @@ if [ "$FIRST_DEPLOY" = true ]; then
         echo "  - Les ports 80 et 443 sont ouverts"
     fi
 else
-    # Mise à jour : juste redémarrer avec le SSL existant
-    echo "🔄 Redémarrage de Certbot..."
+    # Mise à jour : certificats SSL déjà présents, juste redémarrer Certbot
+    echo ""
+    echo "🔄 Redémarrage de Certbot pour renouvellement automatique..."
     $DOCKER_COMPOSE -f $COMPOSE_FILE up -d certbot
+    echo -e "${GREEN}✓ Déploiement avec SSL existant${NC}"
 fi
 
 # Vérifier que tout tourne
