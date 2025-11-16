@@ -64,61 +64,70 @@ if [ "$BACKEND_IP" != "$SERVER_IP" ] || [ "$FRONTEND_IP" != "$SERVER_IP" ]; then
 fi
 
 # Vérifier si les certificats existent déjà
+echo ""
+echo "🔍 Vérification des certificats existants..."
+
 BACKEND_CERT_EXISTS=false
 FRONTEND_CERT_EXISTS=false
 
 if [ -f "certbot/conf/live/$BACKEND_DOMAIN/fullchain.pem" ]; then
     BACKEND_CERT_EXISTS=true
+    echo -e "${GREEN}✓ Certificat backend trouvé${NC}"
 fi
 
 if [ -f "certbot/conf/live/$FRONTEND_DOMAIN/fullchain.pem" ]; then
     FRONTEND_CERT_EXISTS=true
+    echo -e "${GREEN}✓ Certificat frontend trouvé${NC}"
 fi
 
-# Obtenir certificat backend
-echo ""
-if [ "$BACKEND_CERT_EXISTS" = true ]; then
-    echo -e "${GREEN}✓ Certificat backend déjà présent pour $BACKEND_DOMAIN${NC}"
+# Si les deux certificats existent déjà, pas besoin de Certbot
+if [ "$BACKEND_CERT_EXISTS" = true ] && [ "$FRONTEND_CERT_EXISTS" = true ]; then
+    echo ""
+    echo -e "${GREEN}✓ Tous les certificats SSL sont déjà présents${NC}"
+    echo "Passage directement à l'activation HTTPS..."
 else
-    echo "🔒 Obtention du certificat pour $BACKEND_DOMAIN..."
-    $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
-        --webroot \
-        --webroot-path=/var/www/certbot \
-        --email $EMAIL \
-        --agree-tos \
-        --no-eff-email \
-        --non-interactive \
-        -d $BACKEND_DOMAIN
+    # Obtenir les certificats manquants
+    if [ "$BACKEND_CERT_EXISTS" = false ]; then
+        echo ""
+        echo "🔒 Obtention du certificat pour $BACKEND_DOMAIN..."
+        $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
+            --webroot \
+            --webroot-path=/var/www/certbot \
+            --email $EMAIL \
+            --agree-tos \
+            --no-eff-email \
+            --non-interactive \
+            --keep-until-expiring \
+            -d $BACKEND_DOMAIN
 
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}❌ Échec pour $BACKEND_DOMAIN${NC}"
-        exit 1
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}❌ Échec pour $BACKEND_DOMAIN${NC}"
+            exit 1
+        fi
+
+        echo -e "${GREEN}✓ Certificat backend obtenu${NC}"
     fi
 
-    echo -e "${GREEN}✓ Certificat backend obtenu${NC}"
-fi
+    if [ "$FRONTEND_CERT_EXISTS" = false ]; then
+        echo ""
+        echo "🔒 Obtention du certificat pour $FRONTEND_DOMAIN..."
+        $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
+            --webroot \
+            --webroot-path=/var/www/certbot \
+            --email $EMAIL \
+            --agree-tos \
+            --no-eff-email \
+            --non-interactive \
+            --keep-until-expiring \
+            -d $FRONTEND_DOMAIN
 
-# Obtenir certificat frontend
-echo ""
-if [ "$FRONTEND_CERT_EXISTS" = true ]; then
-    echo -e "${GREEN}✓ Certificat frontend déjà présent pour $FRONTEND_DOMAIN${NC}"
-else
-    echo "🔒 Obtention du certificat pour $FRONTEND_DOMAIN..."
-    $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
-        --webroot \
-        --webroot-path=/var/www/certbot \
-        --email $EMAIL \
-        --agree-tos \
-        --no-eff-email \
-        --non-interactive \
-        -d $FRONTEND_DOMAIN
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}❌ Échec pour $FRONTEND_DOMAIN${NC}"
+            exit 1
+        fi
 
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}❌ Échec pour $FRONTEND_DOMAIN${NC}"
-        exit 1
+        echo -e "${GREEN}✓ Certificat frontend obtenu${NC}"
     fi
-
-    echo -e "${GREEN}✓ Certificat frontend obtenu${NC}"
 fi
 
 # Activer la configuration SSL
