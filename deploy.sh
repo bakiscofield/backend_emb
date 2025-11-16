@@ -147,7 +147,6 @@ if [ "$FIRST_DEPLOY" = true ]; then
         --email $EMAIL \
         --agree-tos \
         --no-eff-email \
-        --force-renewal \
         -d $DOMAIN
 
     if [ $? -eq 0 ]; then
