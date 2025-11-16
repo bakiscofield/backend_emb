@@ -21,7 +21,24 @@ services:
       retries: 3
       start_period: 40s
 
-  # Nginx reverse proxy
+  # Frontend Next.js (depuis le répertoire parent)
+  emb-frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://emb_back.alicebot.me
+    container_name: emb-frontend
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=https://emb_back.alicebot.me
+    networks:
+      - emb-network
+
+  # Nginx reverse proxy unifié (gère frontend + backend)
   nginx:
     image: nginx:alpine
     container_name: emb-nginx
@@ -36,11 +53,12 @@ services:
       - ./certbot/www:/var/www/certbot:ro
     depends_on:
       - emb-backend
+      - emb-frontend
     networks:
       - emb-network
     command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
 
-  # Certbot pour SSL automatique
+  # Certbot pour SSL automatique (backend + frontend)
   certbot:
     image: certbot/certbot
     container_name: emb-certbot

@@ -2,7 +2,8 @@
 
 echo "╔═══════════════════════════════════════════════════════╗"
 echo "║                                                       ║"
-echo "║   🚀 Déploiement EMB Backend (Docker + Nginx + SSL)  ║"
+echo "║   🚀 Déploiement EMB Complet (Backend + Frontend)    ║"
+echo "║      avec Nginx unifié + SSL                         ║"
 echo "║                                                       ║"
 echo "╚═══════════════════════════════════════════════════════╝"
 echo ""
@@ -15,8 +16,9 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # Configuration
-DOMAIN="emb_back.alicebot.me"
-EMAIL="admin@alicebot.me"  # Changez si nécessaire
+BACKEND_DOMAIN="emb_back.alicebot.me"
+FRONTEND_DOMAIN="emb_front.alicebot.me"
+EMAIL="admin@alicebot.me"
 COMPOSE_FILE="docker-compose.prod.yml"
 
 # Détecter Docker Compose
@@ -61,35 +63,38 @@ echo -e "${GREEN}✓ Fichier .env configuré${NC}"
 mkdir -p nginx/conf.d certbot/conf certbot/www database
 
 # Vérifier si c'est une première installation ou une mise à jour
-SSL_EXISTS=false
+SSL_BACKEND_EXISTS=false
+SSL_FRONTEND_EXISTS=false
 FIRST_DEPLOY=false
 
-if [ -d "certbot/conf/live/$DOMAIN" ]; then
-    echo -e "${GREEN}✓ Certificat SSL déjà présent${NC}"
-    SSL_EXISTS=true
-else
+if [ -d "certbot/conf/live/$BACKEND_DOMAIN" ]; then
+    echo -e "${GREEN}✓ Certificat SSL backend déjà présent${NC}"
+    SSL_BACKEND_EXISTS=true
+fi
+
+if [ -d "certbot/conf/live/$FRONTEND_DOMAIN" ]; then
+    echo -e "${GREEN}✓ Certificat SSL frontend déjà présent${NC}"
+    SSL_FRONTEND_EXISTS=true
+fi
+
+if [ "$SSL_BACKEND_EXISTS" = false ] || [ "$SSL_FRONTEND_EXISTS" = false ]; then
     echo -e "${YELLOW}⚠️  Première installation - SSL sera configuré${NC}"
     FIRST_DEPLOY=true
 
-    # Créer config Nginx temporaire (sans SSL pour obtenir le certificat)
-    cat > nginx/conf.d/emb.conf <<EOF
+    # Créer config Nginx temporaire (sans SSL pour obtenir les certificats)
+    cat > nginx/conf.d/emb-temp.conf <<EOF
+# Temporaire pour obtenir les certificats SSL
 server {
     listen 80;
-    server_name $DOMAIN;
+    server_name $BACKEND_DOMAIN $FRONTEND_DOMAIN;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
 
     location / {
-        proxy_pass http://emb-backend:5005;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_cache_bypass \$http_upgrade;
+        return 200 'Configuration temporaire pour obtenir SSL';
+        add_header Content-Type text/plain;
     }
 }
 EOF
@@ -108,19 +113,19 @@ if systemctl is-active --quiet nginx 2>/dev/null; then
 fi
 
 echo ""
-echo "🔨 Construction de l'image backend..."
-$DOCKER_COMPOSE -f $COMPOSE_FILE build emb-backend
+echo "🔨 Construction des images backend et frontend..."
+$DOCKER_COMPOSE -f $COMPOSE_FILE build
 
 if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ Erreur lors de la construction de l'image${NC}"
+    echo -e "${RED}❌ Erreur lors de la construction des images${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✓ Image construite${NC}"
+echo -e "${GREEN}✓ Images construites${NC}"
 
 echo ""
-echo "🚀 Démarrage du backend et Nginx..."
-$DOCKER_COMPOSE -f $COMPOSE_FILE up -d emb-backend nginx
+echo "🚀 Démarrage du backend, frontend et Nginx..."
+$DOCKER_COMPOSE -f $COMPOSE_FILE up -d emb-backend emb-frontend nginx
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Erreur lors du démarrage${NC}"
@@ -131,94 +136,80 @@ fi
 echo -e "${GREEN}✓ Conteneurs démarrés${NC}"
 
 # Attendre que les services démarrent
-echo "⏳ Attente du démarrage (15 secondes)..."
-sleep 15
+echo "⏳ Attente du démarrage (20 secondes)..."
+sleep 20
 
-# Si première installation, obtenir le certificat SSL
+# Si première installation, obtenir les certificats SSL
 if [ "$FIRST_DEPLOY" = true ]; then
     echo ""
-    echo "🔒 Obtention du certificat SSL..."
-    echo -e "${BLUE}   Domaine: $DOMAIN${NC}"
+    echo "🔒 Obtention des certificats SSL..."
+    echo -e "${BLUE}   Domaines: $BACKEND_DOMAIN, $FRONTEND_DOMAIN${NC}"
     echo -e "${BLUE}   Email: $EMAIL${NC}"
 
-    $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
-        --webroot \
-        --webroot-path=/var/www/certbot \
-        --email $EMAIL \
-        --agree-tos \
-        --no-eff-email \
-        -d $DOMAIN
+    # Obtenir certificat backend si nécessaire
+    if [ "$SSL_BACKEND_EXISTS" = false ]; then
+        echo ""
+        echo "📝 Certificat pour $BACKEND_DOMAIN..."
+        $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
+            --webroot \
+            --webroot-path=/var/www/certbot \
+            --email $EMAIL \
+            --agree-tos \
+            --no-eff-email \
+            -d $BACKEND_DOMAIN
 
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ Certificat SSL obtenu !${NC}"
-        SSL_EXISTS=true
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ Certificat backend obtenu !${NC}"
+            SSL_BACKEND_EXISTS=true
+        else
+            echo -e "${RED}❌ Échec certificat backend${NC}"
+        fi
+    fi
 
-        # Créer la config Nginx complète avec SSL
-        echo "🔧 Configuration de Nginx avec SSL..."
-        cat > nginx/conf.d/emb.conf <<'EOFSSL'
-# Redirection HTTP -> HTTPS
-server {
-    listen 80;
-    server_name emb_back.alicebot.me;
+    # Obtenir certificat frontend si nécessaire
+    if [ "$SSL_FRONTEND_EXISTS" = false ]; then
+        echo ""
+        echo "📝 Certificat pour $FRONTEND_DOMAIN..."
+        $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
+            --webroot \
+            --webroot-path=/var/www/certbot \
+            --email $EMAIL \
+            --agree-tos \
+            --no-eff-email \
+            -d $FRONTEND_DOMAIN
 
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ Certificat frontend obtenu !${NC}"
+            SSL_FRONTEND_EXISTS=true
+        else
+            echo -e "${RED}❌ Échec certificat frontend${NC}"
+        fi
+    fi
 
-    location / {
-        return 301 https://$server_name$request_uri;
-    }
-}
+    # Si les deux certificats sont obtenus, activer la config complète
+    if [ "$SSL_BACKEND_EXISTS" = true ] && [ "$SSL_FRONTEND_EXISTS" = true ]; then
+        echo ""
+        echo "🔧 Activation de la configuration Nginx avec SSL..."
 
-# HTTPS
-server {
-    listen 443 ssl http2;
-    server_name emb_back.alicebot.me;
+        # Supprimer la config temporaire
+        rm -f nginx/conf.d/emb-temp.conf
 
-    ssl_certificate /etc/letsencrypt/live/emb_back.alicebot.me/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/emb_back.alicebot.me/privkey.pem;
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    ssl_ciphers 'ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384';
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_timeout 10m;
-
-    add_header Strict-Transport-Security "max-age=31536000" always;
-
-    access_log /var/log/nginx/emb_backend_access.log;
-    error_log /var/log/nginx/emb_backend_error.log;
-
-    location / {
-        proxy_pass http://emb-backend:5005;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
-EOFSSL
-
-        # Recharger Nginx
+        # La config unifiée (emb-unified.conf) est déjà présente
+        # Il suffit de recharger Nginx
         echo "🔄 Rechargement de Nginx..."
         $DOCKER_COMPOSE -f $COMPOSE_FILE exec nginx nginx -s reload
 
         # Démarrer Certbot pour renouvellement auto
         $DOCKER_COMPOSE -f $COMPOSE_FILE up -d certbot
 
-        echo -e "${GREEN}✓ SSL configuré avec succès !${NC}"
+        echo -e "${GREEN}✓ SSL configuré avec succès pour les deux domaines !${NC}"
     else
-        echo -e "${YELLOW}⚠️  Impossible d'obtenir le certificat SSL${NC}"
+        echo -e "${YELLOW}⚠️  Impossible d'obtenir tous les certificats SSL${NC}"
         echo -e "${YELLOW}   L'application fonctionnera en HTTP${NC}"
         echo ""
         echo "Vérifiez que:"
-        echo "  - Le domaine $DOMAIN pointe vers ce serveur"
+        echo "  - Les domaines $BACKEND_DOMAIN et $FRONTEND_DOMAIN pointent vers ce serveur"
         echo "  - Les ports 80 et 443 sont ouverts"
-        SSL_EXISTS=false
     fi
 else
     # Mise à jour : juste redémarrer avec le SSL existant
@@ -229,7 +220,7 @@ fi
 # Vérifier que tout tourne
 echo ""
 echo "🔍 Vérification des conteneurs..."
-if docker ps | grep -q emb-backend && docker ps | grep -q emb-nginx; then
+if docker ps | grep -q emb-backend && docker ps | grep -q emb-frontend && docker ps | grep -q emb-nginx; then
     echo -e "${GREEN}✓ Tous les conteneurs fonctionnent${NC}"
 else
     echo -e "${RED}❌ Certains conteneurs ne fonctionnent pas${NC}"
@@ -243,12 +234,16 @@ echo "╔═══════════════════════�
 echo "║                                                       ║"
 echo "║            ✅ Déploiement réussi !                    ║"
 echo "║                                                       ║"
-echo "║  🌐 API EMB disponible sur :                         ║"
-if [ "$SSL_EXISTS" = true ]; then
+if [ "$SSL_BACKEND_EXISTS" = true ] && [ "$SSL_FRONTEND_EXISTS" = true ]; then
+echo "║  🌐 Backend disponible sur :                         ║"
 echo "║     https://emb_back.alicebot.me                     ║"
+echo "║                                                       ║"
+echo "║  🌐 Frontend disponible sur :                        ║"
+echo "║     https://emb_front.alicebot.me                    ║"
 echo "║     (HTTP redirigé vers HTTPS)                       ║"
 else
-echo "║     http://emb_back.alicebot.me                      ║"
+echo "║  🌐 Backend : http://emb_back.alicebot.me            ║"
+echo "║  🌐 Frontend : http://emb_front.alicebot.me          ║"
 fi
 echo "║                                                       ║"
 echo "║  📊 Commandes utiles :                               ║"
@@ -257,11 +252,13 @@ echo "║     $DOCKER_COMPOSE -f $COMPOSE_FILE ps              ║"
 echo "║     $DOCKER_COMPOSE -f $COMPOSE_FILE restart         ║"
 echo "║     $DOCKER_COMPOSE -f $COMPOSE_FILE down            ║"
 echo "║                                                       ║"
-echo "║  🧪 Tester l'API :                                   ║"
-if [ "$SSL_EXISTS" = true ]; then
+echo "║  🧪 Tester :                                         ║"
+if [ "$SSL_BACKEND_EXISTS" = true ] && [ "$SSL_FRONTEND_EXISTS" = true ]; then
 echo "║     curl https://emb_back.alicebot.me                ║"
+echo "║     curl https://emb_front.alicebot.me               ║"
 else
 echo "║     curl http://emb_back.alicebot.me                 ║"
+echo "║     curl http://emb_front.alicebot.me                ║"
 fi
 echo "║                                                       ║"
 echo "╚═══════════════════════════════════════════════════════╝"
