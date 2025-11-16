@@ -5,13 +5,10 @@ services:
     build: .
     container_name: emb-backend
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "5000:5000"
-    environment:
-      - NODE_ENV=production
-      - PORT=5000
-      - JWT_SECRET=${JWT_SECRET:-changez_ce_secret_en_production}
-      - FRONTEND_URL=${FRONTEND_URL:-https://emb.alicebot.me}
     volumes:
       # Persister la base de données SQLite
       - ./database:/app/database
