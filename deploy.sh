@@ -13,6 +13,16 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Détecter la commande Docker Compose
+if docker compose version &> /dev/null; then
+    DOCKER_COMPOSE="docker compose"
+elif command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+else
+    echo -e "${RED}❌ Docker Compose n'est pas installé${NC}"
+    exit 1
+fi
+
 # Vérifier Docker
 if ! command -v docker &> /dev/null; then
     echo -e "${RED}❌ Docker n'est pas installé${NC}"
@@ -20,24 +30,34 @@ if ! command -v docker &> /dev/null; then
 fi
 
 echo -e "${GREEN}✓ Docker installé${NC}"
+echo -e "${GREEN}✓ Docker Compose installé ($DOCKER_COMPOSE)${NC}"
 
-# Vérifier Docker Compose
-if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
-    echo -e "${RED}❌ Docker Compose n'est pas installé${NC}"
-    exit 1
+# Vérifier que le fichier .env existe
+if [ ! -f .env ]; then
+    echo -e "${YELLOW}⚠️  Fichier .env non trouvé${NC}"
+    if [ -f .env.example ]; then
+        echo "Création du fichier .env à partir de .env.example..."
+        cp .env.example .env
+        echo -e "${YELLOW}⚠️  IMPORTANT: Modifiez le fichier .env avant de continuer !${NC}"
+        echo -e "${YELLOW}   Notamment JWT_SECRET et FRONTEND_URL${NC}"
+        exit 1
+    else
+        echo -e "${RED}❌ Aucun fichier .env ou .env.example trouvé${NC}"
+        exit 1
+    fi
 fi
 
-echo -e "${GREEN}✓ Docker Compose installé${NC}"
+echo -e "${GREEN}✓ Fichier .env trouvé${NC}"
 echo ""
 
 # Arrêter les conteneurs existants
 echo "🛑 Arrêt des conteneurs existants..."
-docker-compose down 2>/dev/null || docker compose down 2>/dev/null
+$DOCKER_COMPOSE down 2>/dev/null
 
 # Construire l'image
 echo ""
 echo "🔨 Construction de l'image Docker..."
-docker-compose build || docker compose build
+$DOCKER_COMPOSE build
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Erreur lors de la construction de l'image${NC}"
@@ -49,7 +69,7 @@ echo ""
 
 # Démarrer les conteneurs
 echo "🚀 Démarrage des conteneurs..."
-docker-compose up -d || docker compose up -d
+$DOCKER_COMPOSE up -d
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Erreur lors du démarrage des conteneurs${NC}"
@@ -69,7 +89,7 @@ if docker ps | grep -q emb-backend; then
 else
     echo -e "${RED}❌ Le conteneur emb-backend n'est pas en cours d'exécution${NC}"
     echo "Logs du conteneur :"
-    docker-compose logs emb-backend || docker compose logs emb-backend
+    $DOCKER_COMPOSE logs emb-backend
     exit 1
 fi
 
@@ -83,10 +103,10 @@ echo "║     http://localhost:5000                            ║"
 echo "║     https://emb_back.alicebot.me (avec nginx)        ║"
 echo "║                                                       ║"
 echo "║  📊 Commandes utiles :                               ║"
-echo "║     docker-compose logs -f         # Voir les logs   ║"
-echo "║     docker-compose ps              # Statut          ║"
-echo "║     docker-compose restart         # Redémarrer      ║"
-echo "║     docker-compose down            # Arrêter         ║"
+echo "║     $DOCKER_COMPOSE logs -f         # Voir les logs  ║"
+echo "║     $DOCKER_COMPOSE ps              # Statut         ║"
+echo "║     $DOCKER_COMPOSE restart         # Redémarrer     ║"
+echo "║     $DOCKER_COMPOSE down            # Arrêter        ║"
 echo "║                                                       ║"
 echo "╚═══════════════════════════════════════════════════════╝"
 echo ""
