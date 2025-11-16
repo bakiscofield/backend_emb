@@ -160,22 +160,21 @@ if [ "$FIRST_DEPLOY" = true ]; then
     if [ "$SSL_BACKEND_EXISTS" = false ]; then
         echo ""
         echo "📝 Certificat pour $BACKEND_DOMAIN..."
-        OUTPUT=$($DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
+        $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
             --webroot \
             --webroot-path=/var/www/certbot \
             --email $EMAIL \
             --agree-tos \
             --no-eff-email \
-            -d $BACKEND_DOMAIN 2>&1)
+            --keep-until-expiring \
+            --non-interactive \
+            -d $BACKEND_DOMAIN
 
-        EXIT_CODE=$?
-
-        if [ $EXIT_CODE -eq 0 ] || echo "$OUTPUT" | grep -q "Certificate not yet due for renewal"; then
-            echo -e "${GREEN}✓ Certificat backend OK !${NC}"
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ Certificat backend obtenu !${NC}"
             SSL_BACKEND_EXISTS=true
         else
             echo -e "${RED}❌ Échec certificat backend${NC}"
-            echo "$OUTPUT"
         fi
     fi
 
@@ -183,22 +182,21 @@ if [ "$FIRST_DEPLOY" = true ]; then
     if [ "$SSL_FRONTEND_EXISTS" = false ]; then
         echo ""
         echo "📝 Certificat pour $FRONTEND_DOMAIN..."
-        OUTPUT=$($DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
+        $DOCKER_COMPOSE -f $COMPOSE_FILE run --rm certbot certonly \
             --webroot \
             --webroot-path=/var/www/certbot \
             --email $EMAIL \
             --agree-tos \
             --no-eff-email \
-            -d $FRONTEND_DOMAIN 2>&1)
+            --keep-until-expiring \
+            --non-interactive \
+            -d $FRONTEND_DOMAIN
 
-        EXIT_CODE=$?
-
-        if [ $EXIT_CODE -eq 0 ] || echo "$OUTPUT" | grep -q "Certificate not yet due for renewal"; then
-            echo -e "${GREEN}✓ Certificat frontend OK !${NC}"
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ Certificat frontend obtenu !${NC}"
             SSL_FRONTEND_EXISTS=true
         else
             echo -e "${RED}❌ Échec certificat frontend${NC}"
-            echo "$OUTPUT"
         fi
     fi
 
