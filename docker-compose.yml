@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  emb-backend:
+    build: .
+    container_name: emb-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - JWT_SECRET=${JWT_SECRET:-changez_ce_secret_en_production}
+      - FRONTEND_URL=${FRONTEND_URL:-https://emb.alicebot.me}
+    volumes:
+      # Persister la base de données SQLite
+      - ./database:/app/database
+    networks:
+      - emb-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  emb-network:
+    driver: bridge

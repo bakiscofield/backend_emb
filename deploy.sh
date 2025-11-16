@@ -1,0 +1,92 @@
+#!/bin/bash
+
+echo "╔═══════════════════════════════════════════════════════╗"
+echo "║                                                       ║"
+echo "║      🚀 Déploiement EMB Backend sur VPS              ║"
+echo "║                                                       ║"
+echo "╚═══════════════════════════════════════════════════════╝"
+echo ""
+
+# Couleurs
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Vérifier Docker
+if ! command -v docker &> /dev/null; then
+    echo -e "${RED}❌ Docker n'est pas installé${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Docker installé${NC}"
+
+# Vérifier Docker Compose
+if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+    echo -e "${RED}❌ Docker Compose n'est pas installé${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Docker Compose installé${NC}"
+echo ""
+
+# Arrêter les conteneurs existants
+echo "🛑 Arrêt des conteneurs existants..."
+docker-compose down 2>/dev/null || docker compose down 2>/dev/null
+
+# Construire l'image
+echo ""
+echo "🔨 Construction de l'image Docker..."
+docker-compose build || docker compose build
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Erreur lors de la construction de l'image${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Image construite avec succès${NC}"
+echo ""
+
+# Démarrer les conteneurs
+echo "🚀 Démarrage des conteneurs..."
+docker-compose up -d || docker compose up -d
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Erreur lors du démarrage des conteneurs${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Conteneurs démarrés${NC}"
+echo ""
+
+# Attendre que le serveur démarre
+echo "⏳ Attente du démarrage du serveur..."
+sleep 5
+
+# Vérifier que le conteneur est en cours d'exécution
+if docker ps | grep -q emb-backend; then
+    echo -e "${GREEN}✓ Conteneur emb-backend en cours d'exécution${NC}"
+else
+    echo -e "${RED}❌ Le conteneur emb-backend n'est pas en cours d'exécution${NC}"
+    echo "Logs du conteneur :"
+    docker-compose logs emb-backend || docker compose logs emb-backend
+    exit 1
+fi
+
+echo ""
+echo "╔═══════════════════════════════════════════════════════╗"
+echo "║                                                       ║"
+echo "║            ✅ Déploiement réussi !                    ║"
+echo "║                                                       ║"
+echo "║  🌐 Backend disponible sur :                         ║"
+echo "║     http://localhost:5000                            ║"
+echo "║     https://emb_back.alicebot.me (avec nginx)        ║"
+echo "║                                                       ║"
+echo "║  📊 Commandes utiles :                               ║"
+echo "║     docker-compose logs -f         # Voir les logs   ║"
+echo "║     docker-compose ps              # Statut          ║"
+echo "║     docker-compose restart         # Redémarrer      ║"
+echo "║     docker-compose down            # Arrêter         ║"
+echo "║                                                       ║"
+echo "╚═══════════════════════════════════════════════════════╝"
+echo ""
