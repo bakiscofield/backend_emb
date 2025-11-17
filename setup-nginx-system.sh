@@ -65,23 +65,38 @@ echo ""
 echo "📋 Étape 3: Obtention des certificats SSL..."
 echo ""
 
+# Créer le dossier webroot
+mkdir -p /var/www/certbot
+
 # Redémarrer Nginx
 systemctl restart nginx
 
-# Obtenir certificat backend
+# Obtenir certificat backend avec webroot (évite bug --nginx)
 echo "🔒 Certificat pour emb_back.alicebot.me..."
-certbot --nginx -d emb_back.alicebot.me --non-interactive --agree-tos --email admin@alicebot.me
+certbot certonly --webroot -w /var/www/certbot \
+    -d emb_back.alicebot.me \
+    --email admin@alicebot.me \
+    --agree-tos \
+    --non-interactive
 
-if [ $? -ne 0 ]; then
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ Certificat backend obtenu${NC}"
+else
     echo -e "${YELLOW}⚠️  Échec pour emb_back.alicebot.me${NC}"
 fi
 
 # Obtenir certificat frontend
 echo ""
 echo "🔒 Certificat pour emb_front.alicebot.me..."
-certbot --nginx -d emb_front.alicebot.me --non-interactive --agree-tos --email admin@alicebot.me
+certbot certonly --webroot -w /var/www/certbot \
+    -d emb_front.alicebot.me \
+    --email admin@alicebot.me \
+    --agree-tos \
+    --non-interactive
 
-if [ $? -ne 0 ]; then
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ Certificat frontend obtenu${NC}"
+else
     echo -e "${YELLOW}⚠️  Échec pour emb_front.alicebot.me${NC}"
 fi
 
