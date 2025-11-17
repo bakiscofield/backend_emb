@@ -78,7 +78,7 @@ sudo tee /etc/nginx/sites-available/emb > /dev/null << 'EOF'
 # Backend EMB
 server {
     listen 80;
-    server_name emb_back.alicebot.me;
+    server_name emb-back.alicebot.me;
 
     location / {
         proxy_pass http://127.0.0.1:5005;
@@ -96,7 +96,7 @@ server {
 # Frontend EMB
 server {
     listen 80;
-    server_name emb_front.alicebot.me;
+    server_name emb-front.alicebot.me;
 
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -142,14 +142,14 @@ curl -s http://127.0.0.1:5005 > /dev/null && echo -e "${GREEN}✓ Backend répon
 
 echo ""
 echo "Test via domaine..."
-curl -s http://emb_back.alicebot.me > /dev/null && echo -e "${GREEN}✓ Backend accessible via emb_back.alicebot.me${NC}" || echo -e "${YELLOW}⚠️  Backend non accessible via le domaine (vérifier DNS)${NC}"
+curl -s http://emb-back.alicebot.me > /dev/null && echo -e "${GREEN}✓ Backend accessible via emb-back.alicebot.me${NC}" || echo -e "${YELLOW}⚠️  Backend non accessible via le domaine (vérifier DNS)${NC}"
 
 echo ""
 echo "╔═══════════════════════════════════════════════════════╗"
 echo "║                                                       ║"
 echo "║            ✅ Déploiement terminé !                   ║"
 echo "║                                                       ║"
-echo "║  📦 Backend : http://emb_back.alicebot.me            ║"
+echo "║  📦 Backend : http://emb-back.alicebot.me            ║"
 echo "║  📍 Port local : 5005                                ║"
 echo "║                                                       ║"
 echo "║  📊 Commandes PM2 :                                  ║"
@@ -159,7 +159,7 @@ echo "║     pm2 restart emb-backend                          ║"
 echo "║     pm2 stop emb-backend                             ║"
 echo "║                                                       ║"
 echo "║  🔒 Pour ajouter SSL :                               ║"
-echo "║     sudo certbot --nginx -d emb_back.alicebot.me     ║"
+echo "║     sudo certbot --nginx -d emb-back.alicebot.me     ║"
 echo "║                                                       ║"
 echo "╚═══════════════════════════════════════════════════════╝"
 echo ""
