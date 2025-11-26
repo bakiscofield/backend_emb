@@ -1,0 +1,309 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model admin_permissions {
+  id            Int         @id @default(autoincrement())
+  admin_id      Int
+  permission_id Int
+  granted_at    DateTime?   @default(now())
+  permissions   permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  admins        admins      @relation(fields: [admin_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([admin_id, permission_id], map: "sqlite_autoindex_admin_permissions_1")
+}
+
+model admins {
+  id                  Int                   @id @default(autoincrement())
+  username            String                @unique(map: "sqlite_autoindex_admins_1")
+  password            String
+  email               String?
+  created_at          DateTime?             @default(now())
+  is_active           Boolean?              @default(true)
+  admin_permissions   admin_permissions[]
+  chat_conversations  chat_conversations[]
+  kyc_documents       kyc_documents[]
+  newsletter_history  newsletter_history[]
+  newsletters         newsletters[]
+  notifications       notifications[]
+  push_subscriptions  push_subscriptions[]
+  transaction_history transaction_history[]
+  transactions        transactions[]
+}
+
+model bookmakers {
+  id           Int            @id @default(autoincrement())
+  name         String
+  code         String         @unique(map: "sqlite_autoindex_bookmakers_1")
+  is_active    Boolean?       @default(true)
+  created_at   DateTime?      @default(now())
+  transactions transactions[]
+}
+
+model chat_conversations {
+  id              Int             @id @default(autoincrement())
+  user_id         Int
+  admin_id        Int?
+  status          String?         @default("open")
+  last_message_at DateTime?       @default(now())
+  created_at      DateTime?       @default(now())
+  closed_at       DateTime?
+  admins          admins?         @relation(fields: [admin_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users           users           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  chat_messages   chat_messages[]
+
+  @@index([admin_id], map: "idx_chat_conv_admin_id")
+  @@index([user_id], map: "idx_chat_conv_user_id")
+}
+
+model chat_messages {
+  id                 Int                @id @default(autoincrement())
+  conversation_id    Int
+  sender_type        String
+  sender_id          Int
+  message            String
+  is_read            Int?               @default(0)
+  created_at         DateTime?          @default(now())
+  chat_conversations chat_conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([is_read], map: "idx_chat_msg_is_read")
+  @@index([conversation_id], map: "idx_chat_msg_conv_id")
+}
+
+model config {
+  id          Int       @id @default(autoincrement())
+  key         String    @unique(map: "sqlite_autoindex_config_1")
+  value       String
+  description String?
+  updated_at  DateTime? @default(now())
+}
+
+model email_verification_codes {
+  id         Int       @id @default(autoincrement())
+  email      String
+  code       String
+  phone      String?
+  name       String?
+  password   String?
+  created_at DateTime? @default(now())
+  expires_at DateTime
+  verified   Boolean?  @default(false)
+  attempts   Int?      @default(0)
+}
+
+model exchange_fields {
+  id               Int            @id @default(autoincrement())
+  exchange_pair_id Int
+  field_name       String
+  field_type       String
+  field_label      String
+  placeholder      String?
+  is_required      Boolean?       @default(false)
+  options          String?
+  field_order      Int?           @default(0)
+  created_at       DateTime?      @default(now())
+  exchange_pairs   exchange_pairs @relation(fields: [exchange_pair_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model exchange_pairs {
+  id                                                             Int               @id @default(autoincrement())
+  from_method_id                                                 Int
+  to_method_id                                                   Int
+  fee_percentage                                                 Float?            @default(0)
+  tax_amount                                                     Float?            @default(0)
+  is_active                                                      Boolean?          @default(true)
+  created_at                                                     DateTime?         @default(now())
+  payment_syntax_type                                            String?           @default("TEXTE")
+  payment_syntax_value                                           String?           @default("")
+  exchange_fields                                                exchange_fields[]
+  payment_methods_exchange_pairs_to_method_idTopayment_methods   payment_methods   @relation("exchange_pairs_to_method_idTopayment_methods", fields: [to_method_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  payment_methods_exchange_pairs_from_method_idTopayment_methods payment_methods   @relation("exchange_pairs_from_method_idTopayment_methods", fields: [from_method_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  transactions                                                   transactions[]
+
+  @@unique([from_method_id, to_method_id], map: "sqlite_autoindex_exchange_pairs_1")
+}
+
+model kyc_documents {
+  id               Int       @id @default(autoincrement())
+  user_id          Int
+  document_type    String
+  document_front   String
+  document_back    String?
+  status           String?   @default("pending")
+  verified_by      Int?
+  verified_at      DateTime?
+  rejection_reason String?
+  created_at       DateTime? @default(now())
+  updated_at       DateTime? @default(now())
+  admins           admins?   @relation(fields: [verified_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users            users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([status], map: "idx_kyc_status")
+  @@index([user_id], map: "idx_kyc_user_id")
+}
+
+model newsletter_history {
+  id              Int         @id @default(autoincrement())
+  newsletter_id   Int
+  recipient_type  String
+  recipient_count Int
+  sent_by         Int
+  sent_at         DateTime?   @default(now())
+  admins          admins      @relation(fields: [sent_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  newsletters     newsletters @relation(fields: [newsletter_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model newsletter_recipients {
+  id            Int         @id @default(autoincrement())
+  newsletter_id Int
+  user_id       Int
+  sent_at       DateTime?   @default(now())
+  opened_at     DateTime?
+  users         users       @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  newsletters   newsletters @relation(fields: [newsletter_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([newsletter_id, user_id], map: "sqlite_autoindex_newsletter_recipients_1")
+}
+
+model newsletters {
+  id                    Int                     @id @default(autoincrement())
+  title                 String
+  subject               String
+  content               String
+  content_html          String?
+  status                String?                 @default("draft")
+  created_by            Int
+  created_at            DateTime?               @default(now())
+  sent_at               DateTime?
+  newsletter_history    newsletter_history[]
+  newsletter_recipients newsletter_recipients[]
+  admins                admins                  @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model notifications {
+  id             Int           @id @default(autoincrement())
+  user_id        Int?
+  admin_id       Int?
+  type           String
+  title          String
+  message        String
+  is_read        Boolean?      @default(false)
+  transaction_id Int?
+  created_at     DateTime?     @default(now())
+  transactions   transactions? @relation(fields: [transaction_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  admins         admins?       @relation(fields: [admin_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users          users?        @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model password_reset_tokens {
+  id         Int       @id @default(autoincrement())
+  user_id    Int
+  email      String
+  code       String
+  created_at DateTime? @default(now())
+  expires_at DateTime
+  used       Boolean?  @default(false)
+  attempts   Int?      @default(0)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model payment_methods {
+  id                                                            Int              @id @default(autoincrement())
+  name                                                          String
+  code                                                          String           @unique(map: "sqlite_autoindex_payment_methods_1")
+  icon                                                          String?
+  description                                                   String?
+  is_active                                                     Boolean?         @default(true)
+  created_at                                                    DateTime?        @default(now())
+  exchange_pairs_exchange_pairs_to_method_idTopayment_methods   exchange_pairs[] @relation("exchange_pairs_to_method_idTopayment_methods")
+  exchange_pairs_exchange_pairs_from_method_idTopayment_methods exchange_pairs[] @relation("exchange_pairs_from_method_idTopayment_methods")
+}
+
+model permissions {
+  id                Int                 @id @default(autoincrement())
+  code              String              @unique(map: "sqlite_autoindex_permissions_1")
+  name              String
+  description       String?
+  category          String
+  created_at        DateTime?           @default(now())
+  admin_permissions admin_permissions[]
+}
+
+model push_subscriptions {
+  id                Int       @id @default(autoincrement())
+  user_id           Int?
+  admin_id          Int?
+  endpoint          String    @unique
+  subscription_data String
+  created_at        DateTime? @default(now())
+  users             users?    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  admins            admins?   @relation(fields: [admin_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_push_sub_user_id")
+  @@index([admin_id], map: "idx_push_sub_admin_id")
+}
+
+model transaction_history {
+  id             Int          @id @default(autoincrement())
+  transaction_id Int
+  status         String
+  comment        String?
+  changed_by     Int?
+  created_at     DateTime?    @default(now())
+  admins         admins?      @relation(fields: [changed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  transactions   transactions @relation(fields: [transaction_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model transactions {
+  id                  Int                   @id @default(autoincrement())
+  transaction_id      String                @unique(map: "sqlite_autoindex_transactions_1")
+  user_id             Int
+  tmoney_number       String
+  flooz_number        String
+  amount              Float
+  percentage          Float
+  total_amount        Float
+  payment_reference   String
+  status              String?               @default("pending")
+  bookmaker_id        Int?
+  notes               String?
+  validated_by        Int?
+  validated_at        DateTime?
+  created_at          DateTime?             @default(now())
+  exchange_pair_id    Int?
+  dynamic_fields      String?
+  tax_amount          Float?                @default(0)
+  from_number         String?
+  to_number           String?
+  notifications       notifications[]
+  transaction_history transaction_history[]
+  admins              admins?               @relation(fields: [validated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  bookmakers          bookmakers?           @relation(fields: [bookmaker_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users               users                 @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  exchange_pairs      exchange_pairs?       @relation(fields: [exchange_pair_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model users {
+  id                    Int                     @id @default(autoincrement())
+  phone                 String                  @unique(map: "sqlite_autoindex_users_1")
+  name                  String
+  email                 String?                 @unique(map: "idx_users_email")
+  password              String
+  created_at            DateTime?               @default(now())
+  newsletter_subscribed Boolean?                @default(true)
+  is_active             Int?                    @default(1)
+  kyc_verified          Int?                    @default(0)
+  kyc_status            String?                 @default("pending")
+  chat_conversations    chat_conversations[]
+  kyc_documents         kyc_documents[]
+  newsletter_recipients newsletter_recipients[]
+  notifications         notifications[]
+  password_reset_tokens password_reset_tokens[]
+  push_subscriptions    push_subscriptions[]
+  transactions          transactions[]
+}

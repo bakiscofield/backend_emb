@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const db = require('../config/database');
+const prisma = require('../config/prisma');
 const { adminMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
@@ -10,17 +10,19 @@ const router = express.Router();
 // Obtenir toutes les configurations
 router.get('/config', adminMiddleware, async (req, res) => {
   try {
-    const configs = await db.all('SELECT * FROM config ORDER BY key');
-    
+    const configs = await prisma.config.findMany({
+      orderBy: { key: 'asc' }
+    });
+
     res.json({
       success: true,
       configs
     });
   } catch (error) {
     console.error('Erreur lors de la récupération des configurations:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Erreur serveur' 
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur'
     });
   }
 });
@@ -28,12 +30,14 @@ router.get('/config', adminMiddleware, async (req, res) => {
 // Obtenir une configuration publique (sans authentification)
 router.get('/config/public/:key', async (req, res) => {
   try {
-    const config = await db.get('SELECT * FROM config WHERE key = ?', [req.params.key]);
-    
+    const config = await prisma.config.findUnique({
+      where: { key: req.params.key }
+    });
+
     if (!config) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Configuration non trouvée' 
+      return res.status(404).json({
+        success: false,
+        message: 'Configuration non trouvée'
       });
     }
 
@@ -43,9 +47,9 @@ router.get('/config/public/:key', async (req, res) => {
     });
   } catch (error) {
     console.error('Erreur lors de la récupération de la configuration:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Erreur serveur' 
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur'
     });
   }
 });
@@ -63,19 +67,25 @@ router.put('/config/:key', adminMiddleware, [
     const { value } = req.body;
 
     // Vérifier que la configuration existe
-    const config = await db.get('SELECT * FROM config WHERE key = ?', [req.params.key]);
+    const config = await prisma.config.findUnique({
+      where: { key: req.params.key }
+    });
+
     if (!config) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Configuration non trouvée' 
+      return res.status(404).json({
+        success: false,
+        message: 'Configuration non trouvée'
       });
     }
 
     // Mettre à jour
-    await db.run(
-      'UPDATE config SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?',
-      [value, req.params.key]
-    );
+    await prisma.config.update({
+      where: { key: req.params.key },
+      data: {
+        value,
+        updated_at: new Date()
+      }
+    });
 
     res.json({
       success: true,
@@ -83,9 +93,9 @@ router.put('/config/:key', adminMiddleware, [
     });
   } catch (error) {
     console.error('Erreur lors de la mise à jour de la configuration:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Erreur serveur' 
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur'
     });
   }
 });
@@ -105,19 +115,25 @@ router.post('/config', adminMiddleware, [
     const { key, value, description } = req.body;
 
     // Vérifier que la clé n'existe pas déjà
-    const existingConfig = await db.get('SELECT * FROM config WHERE key = ?', [key]);
+    const existingConfig = await prisma.config.findUnique({
+      where: { key }
+    });
+
     if (existingConfig) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Cette clé de configuration existe déjà' 
+      return res.status(400).json({
+        success: false,
+        message: 'Cette clé de configuration existe déjà'
       });
     }
 
     // Insérer
-    await db.run(
-      'INSERT INTO config (key, value, description) VALUES (?, ?, ?)',
-      [key, value, description || null]
-    );
+    await prisma.config.create({
+      data: {
+        key,
+        value,
+        description: description || null
+      }
+    });
 
     res.status(201).json({
       success: true,
@@ -125,9 +141,9 @@ router.post('/config', adminMiddleware, [
     });
   } catch (error) {
     console.error('Erreur lors de la création de la configuration:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Erreur serveur' 
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur'
     });
   }
 });
@@ -138,27 +154,27 @@ router.post('/config', adminMiddleware, [
 router.get('/bookmakers', async (req, res) => {
   try {
     const { active_only } = req.query;
-    
-    let query = 'SELECT * FROM bookmakers';
-    const params = [];
+
+    const whereClause = {};
 
     if (active_only === 'true') {
-      query += ' WHERE is_active = 1';
+      whereClause.is_active = true;
     }
 
-    query += ' ORDER BY name';
+    const bookmakers = await prisma.bookmakers.findMany({
+      where: whereClause,
+      orderBy: { name: 'asc' }
+    });
 
-    const bookmakers = await db.all(query, params);
-    
     res.json({
       success: true,
       bookmakers
     });
   } catch (error) {
     console.error('Erreur lors de la récupération des bookmakers:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Erreur serveur' 
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur'
     });
   }
 });
@@ -177,34 +193,39 @@ router.post('/bookmakers', adminMiddleware, [
     const { name, code } = req.body;
 
     // Vérifier que le code n'existe pas déjà
-    const existingBookmaker = await db.get('SELECT * FROM bookmakers WHERE code = ?', [code]);
+    const existingBookmaker = await prisma.bookmakers.findUnique({
+      where: { code: code.toUpperCase() }
+    });
+
     if (existingBookmaker) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Ce code de bookmaker existe déjà' 
+      return res.status(400).json({
+        success: false,
+        message: 'Ce code de bookmaker existe déjà'
       });
     }
 
     // Insérer
-    const result = await db.run(
-      'INSERT INTO bookmakers (name, code) VALUES (?, ?)',
-      [name, code.toUpperCase()]
-    );
+    const bookmaker = await prisma.bookmakers.create({
+      data: {
+        name,
+        code: code.toUpperCase()
+      }
+    });
 
     res.status(201).json({
       success: true,
       message: 'Bookmaker créé avec succès',
       bookmaker: {
-        id: result.id,
-        name,
-        code: code.toUpperCase()
+        id: bookmaker.id,
+        name: bookmaker.name,
+        code: bookmaker.code
       }
     });
   } catch (error) {
     console.error('Erreur lors de la création du bookmaker:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Erreur serveur' 
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur'
     });
   }
 });
@@ -223,41 +244,39 @@ router.put('/bookmakers/:id', adminMiddleware, [
     const { name, is_active } = req.body;
 
     // Vérifier que le bookmaker existe
-    const bookmaker = await db.get('SELECT * FROM bookmakers WHERE id = ?', [req.params.id]);
+    const bookmaker = await prisma.bookmakers.findUnique({
+      where: { id: parseInt(req.params.id) }
+    });
+
     if (!bookmaker) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Bookmaker non trouvé' 
+      return res.status(404).json({
+        success: false,
+        message: 'Bookmaker non trouvé'
       });
     }
 
-    // Construire la requête de mise à jour
-    const updates = [];
-    const params = [];
+    // Construire les données de mise à jour
+    const updateData = {};
 
     if (name !== undefined) {
-      updates.push('name = ?');
-      params.push(name);
+      updateData.name = name;
     }
 
     if (is_active !== undefined) {
-      updates.push('is_active = ?');
-      params.push(is_active ? 1 : 0);
+      updateData.is_active = is_active;
     }
 
-    if (updates.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Aucune donnée à mettre à jour' 
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Aucune donnée à mettre à jour'
       });
     }
 
-    params.push(req.params.id);
-
-    await db.run(
-      `UPDATE bookmakers SET ${updates.join(', ')} WHERE id = ?`,
-      params
-    );
+    await prisma.bookmakers.update({
+      where: { id: parseInt(req.params.id) },
+      data: updateData
+    });
 
     res.json({
       success: true,
@@ -265,9 +284,9 @@ router.put('/bookmakers/:id', adminMiddleware, [
     });
   } catch (error) {
     console.error('Erreur lors de la mise à jour du bookmaker:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Erreur serveur' 
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur'
     });
   }
 });
@@ -276,29 +295,33 @@ router.put('/bookmakers/:id', adminMiddleware, [
 router.delete('/bookmakers/:id', adminMiddleware, async (req, res) => {
   try {
     // Vérifier que le bookmaker existe
-    const bookmaker = await db.get('SELECT * FROM bookmakers WHERE id = ?', [req.params.id]);
+    const bookmaker = await prisma.bookmakers.findUnique({
+      where: { id: parseInt(req.params.id) }
+    });
+
     if (!bookmaker) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Bookmaker non trouvé' 
+      return res.status(404).json({
+        success: false,
+        message: 'Bookmaker non trouvé'
       });
     }
 
     // Vérifier qu'il n'est pas utilisé dans des transactions
-    const transactionCount = await db.get(
-      'SELECT COUNT(*) as count FROM transactions WHERE bookmaker_id = ?',
-      [req.params.id]
-    );
+    const transactionCount = await prisma.transactions.count({
+      where: { bookmaker_id: parseInt(req.params.id) }
+    });
 
-    if (transactionCount.count > 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Impossible de supprimer ce bookmaker car il est utilisé dans des transactions' 
+    if (transactionCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Impossible de supprimer ce bookmaker car il est utilisé dans des transactions'
       });
     }
 
     // Supprimer
-    await db.run('DELETE FROM bookmakers WHERE id = ?', [req.params.id]);
+    await prisma.bookmakers.delete({
+      where: { id: parseInt(req.params.id) }
+    });
 
     res.json({
       success: true,
@@ -306,9 +329,9 @@ router.delete('/bookmakers/:id', adminMiddleware, async (req, res) => {
     });
   } catch (error) {
     console.error('Erreur lors de la suppression du bookmaker:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Erreur serveur' 
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur'
     });
   }
 });

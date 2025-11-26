@@ -8,6 +8,15 @@ const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 const transactionRoutes = require('./routes/transactions');
 const settingsRoutes = require('./routes/settings');
+const paymentMethodsRoutes = require('./routes/payment-methods');
+const exchangePairsRoutes = require('./routes/exchange-pairs');
+const notificationsRoutes = require('./routes/notifications');
+const permissionsRoutes = require('./routes/permissions');
+const newslettersRoutes = require('./routes/newsletters');
+const usersRoutes = require('./routes/users');
+const kycRoutes = require('./routes/kyc');
+const chatRoutes = require('./routes/chat');
+const pushRoutes = require('./routes/push');
 
 // Initialiser la base de données
 const db = require('./config/database');
@@ -33,13 +42,22 @@ app.use((req, res, next) => {
 app.get('/', (req, res) => {
   res.json({
     success: true,
-    message: 'API EMB - Échange Tmoney vers Flooz',
-    version: '1.0.0',
+    message: 'API EMB - Échange de moyens de paiement digitaux',
+    version: '2.0.0',
     endpoints: {
       auth: '/api/auth',
       admin: '/api/admin',
       transactions: '/api/transactions',
-      settings: '/api/settings'
+      settings: '/api/settings',
+      paymentMethods: '/api/payment-methods',
+      exchangePairs: '/api/exchange-pairs',
+      notifications: '/api/notifications',
+      permissions: '/api/permissions',
+      newsletters: '/api/newsletters',
+      users: '/api/users',
+      kyc: '/api/kyc',
+      chat: '/api/chat',
+      push: '/api/push'
     }
   });
 });
@@ -48,6 +66,18 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/payment-methods', paymentMethodsRoutes);
+app.use('/api/exchange-pairs', exchangePairsRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/permissions', permissionsRoutes);
+app.use('/api/newsletters', newslettersRoutes);
+app.use('/api/users', usersRoutes);
+app.use('/api/kyc', kycRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/push', pushRoutes);
+
+// Servir les fichiers statiques (uploads)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Route 404
 app.use((req, res) => {
@@ -79,10 +109,13 @@ app.listen(PORT, '0.0.0.0', () => {
 ║  URL: http://localhost:${PORT}                        ║
 ║                                                       ║
 ║  Endpoints API:                                       ║
-║  • Auth:         /api/auth                            ║
-║  • Admin:        /api/admin                           ║
-║  • Transactions: /api/transactions                    ║
-║  • Settings:     /api/settings                        ║
+║  • Auth:           /api/auth                          ║
+║  • Admin:          /api/admin                         ║
+║  • Transactions:   /api/transactions                  ║
+║  • Settings:       /api/settings                      ║
+║  • Payment Methods:/api/payment-methods               ║
+║  • Exchange Pairs: /api/exchange-pairs                ║
+║  • Notifications:  /api/notifications                 ║
 ║                                                       ║
 ╚═══════════════════════════════════════════════════════╝
   `);

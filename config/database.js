@@ -108,6 +108,70 @@ class Database {
         )
       `);
 
+      // Table des moyens de paiement (T-Money, Flooz, etc.)
+      this.db.run(`
+        CREATE TABLE IF NOT EXISTS payment_methods (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          code TEXT UNIQUE NOT NULL,
+          icon TEXT,
+          description TEXT,
+          is_active BOOLEAN DEFAULT 1,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Table des paires d'échanges (A → B)
+      this.db.run(`
+        CREATE TABLE IF NOT EXISTS exchange_pairs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          from_method_id INTEGER NOT NULL,
+          to_method_id INTEGER NOT NULL,
+          fee_percentage REAL DEFAULT 0,
+          tax_amount REAL DEFAULT 0,
+          is_active BOOLEAN DEFAULT 1,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (from_method_id) REFERENCES payment_methods(id),
+          FOREIGN KEY (to_method_id) REFERENCES payment_methods(id),
+          UNIQUE(from_method_id, to_method_id)
+        )
+      `);
+
+      // Table des champs supplémentaires pour les échanges
+      this.db.run(`
+        CREATE TABLE IF NOT EXISTS exchange_fields (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          exchange_pair_id INTEGER NOT NULL,
+          field_name TEXT NOT NULL,
+          field_type TEXT NOT NULL,
+          field_label TEXT NOT NULL,
+          placeholder TEXT,
+          is_required BOOLEAN DEFAULT 0,
+          options TEXT,
+          field_order INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (exchange_pair_id) REFERENCES exchange_pairs(id) ON DELETE CASCADE
+        )
+      `);
+
+      // Table des notifications
+      this.db.run(`
+        CREATE TABLE IF NOT EXISTS notifications (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER,
+          admin_id INTEGER,
+          type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          message TEXT NOT NULL,
+          is_read BOOLEAN DEFAULT 0,
+          transaction_id INTEGER,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          FOREIGN KEY (admin_id) REFERENCES admins(id),
+          FOREIGN KEY (transaction_id) REFERENCES transactions(id)
+        )
+      `);
+
       // Insérer des configurations par défaut
       this.db.run(`
         INSERT OR IGNORE INTO config (key, value, description) 
@@ -119,12 +183,20 @@ class Database {
 
       // Insérer des bookmakers par défaut
       this.db.run(`
-        INSERT OR IGNORE INTO bookmakers (name, code, is_active) 
-        VALUES 
+        INSERT OR IGNORE INTO bookmakers (name, code, is_active)
+        VALUES
           ('1xBet', '1XBET', 1),
           ('22Bet', '22BET', 1),
           ('Melbet', 'MELBET', 1),
           ('Betwinner', 'BETWINNER', 1)
+      `);
+
+      // Insérer des moyens de paiement par défaut
+      this.db.run(`
+        INSERT OR IGNORE INTO payment_methods (name, code, icon, description, is_active)
+        VALUES
+          ('T-Money', 'TMONEY', '💰', 'Togocom Mobile Money', 1),
+          ('Flooz', 'FLOOZ', '💸', 'Moov Africa Mobile Money', 1)
       `);
 
       console.log('✓ Tables initialisées avec succès');
