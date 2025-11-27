@@ -328,8 +328,639 @@ const sendPasswordResetCode = async (email, code) => {
   }
 };
 
+// Envoyer un email de confirmation de transaction créée
+const sendTransactionCreated = async (email, transactionData) => {
+  const transporter = createTransporter();
+
+  // Mode console si Gmail n'est pas configuré
+  if (!transporter) {
+    console.log('\n📧 ===== EMAIL TRANSACTION CRÉÉE (MODE CONSOLE) =====');
+    console.log(`À: ${email}`);
+    console.log(`Sujet: Demande d'échange créée - ${transactionData.transaction_id}`);
+    console.log(`\nBonjour ${transactionData.userName},\n`);
+    console.log(`Votre demande d'échange a été créée avec succès.`);
+    console.log(`\nDétails de la transaction:`);
+    console.log(`- ID: ${transactionData.transaction_id}`);
+    console.log(`- Montant: ${transactionData.amount} FCFA`);
+    console.log(`- Commission: ${transactionData.commission} FCFA`);
+    console.log(`- Montant total: ${transactionData.total_amount} FCFA`);
+    console.log(`- De: ${transactionData.from_number}`);
+    console.log(`- Vers: ${transactionData.to_number}`);
+    console.log(`- Statut: En attente de validation`);
+    console.log(`\nNous traiterons votre demande dans les plus brefs délais.`);
+    console.log('====================================================\n');
+    return true;
+  }
+
+  // Envoi réel par Gmail
+  try {
+    const info = await transporter.sendMail({
+      from: `"${process.env.EMAIL_FROM_NAME || 'EMB Transfer'}" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: `Demande d'échange créée - ${transactionData.transaction_id}`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              background-color: #0a0a0a;
+              color: #ffffff;
+              margin: 0;
+              padding: 0;
+            }
+            .container {
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 40px 20px;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 40px;
+            }
+            .logo {
+              font-size: 32px;
+              font-weight: bold;
+              color: #FF3B38;
+              margin-bottom: 10px;
+            }
+            .content {
+              background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+              border: 2px solid #FF3B38;
+              border-radius: 16px;
+              padding: 40px;
+            }
+            .transaction-id {
+              background-color: #FF3B38;
+              color: #ffffff;
+              font-size: 24px;
+              font-weight: bold;
+              padding: 15px;
+              border-radius: 8px;
+              text-align: center;
+              margin: 20px 0;
+            }
+            .details-table {
+              width: 100%;
+              margin: 20px 0;
+              border-collapse: collapse;
+            }
+            .details-table td {
+              padding: 12px;
+              border-bottom: 1px solid #333;
+            }
+            .details-table td:first-child {
+              color: #999;
+              width: 40%;
+            }
+            .details-table td:last-child {
+              color: #fff;
+              font-weight: bold;
+              text-align: right;
+            }
+            .status-badge {
+              display: inline-block;
+              background-color: #FFA500;
+              color: #fff;
+              padding: 8px 16px;
+              border-radius: 20px;
+              font-size: 14px;
+              font-weight: bold;
+            }
+            .message {
+              color: #cccccc;
+              line-height: 1.6;
+              margin: 20px 0;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 40px;
+              color: #666666;
+              font-size: 12px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="logo">EMILE TRANSFER+</div>
+            </div>
+
+            <div class="content">
+              <h1 style="color: #FF3B38; margin-top: 0; text-align: center;">Demande d'échange créée</h1>
+
+              <p class="message">
+                Bonjour <strong>${transactionData.userName}</strong>,<br><br>
+                Votre demande d'échange a été créée avec succès et est maintenant en attente de validation par notre équipe.
+              </p>
+
+              <div class="transaction-id">${transactionData.transaction_id}</div>
+
+              <table class="details-table">
+                <tr>
+                  <td>Montant à échanger</td>
+                  <td>${transactionData.amount} FCFA</td>
+                </tr>
+                <tr>
+                  <td>Commission</td>
+                  <td>${transactionData.commission} FCFA</td>
+                </tr>
+                ${transactionData.tax_amount > 0 ? `
+                <tr>
+                  <td>Taxe</td>
+                  <td>${transactionData.tax_amount} FCFA</td>
+                </tr>
+                ` : ''}
+                <tr>
+                  <td>Montant total</td>
+                  <td style="color: #FF3B38;">${transactionData.total_amount} FCFA</td>
+                </tr>
+                <tr>
+                  <td>Numéro source</td>
+                  <td>${transactionData.from_number}</td>
+                </tr>
+                <tr>
+                  <td>Numéro destination</td>
+                  <td>${transactionData.to_number}</td>
+                </tr>
+                <tr>
+                  <td>Statut</td>
+                  <td><span class="status-badge">En attente</span></td>
+                </tr>
+              </table>
+
+              <p class="message">
+                Nous traiterons votre demande dans les plus brefs délais. Vous recevrez une notification par email dès que votre transaction sera traitée.
+              </p>
+            </div>
+
+            <div class="footer">
+              <p>
+                Cet email a été envoyé automatiquement par EMB Transfer.<br>
+                Merci de ne pas répondre à cet email.
+              </p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `
+        EMILE TRANSFER+
+
+        Demande d'échange créée
+
+        Bonjour ${transactionData.userName},
+
+        Votre demande d'échange a été créée avec succès.
+
+        ID Transaction: ${transactionData.transaction_id}
+        Montant: ${transactionData.amount} FCFA
+        Commission: ${transactionData.commission} FCFA
+        Montant total: ${transactionData.total_amount} FCFA
+        De: ${transactionData.from_number}
+        Vers: ${transactionData.to_number}
+        Statut: En attente de validation
+
+        Nous traiterons votre demande dans les plus brefs délais.
+
+        Cordialement,
+        L'équipe EMB Transfer
+      `
+    });
+
+    console.log('✅ Email de transaction créée envoyé:', info.messageId);
+    return true;
+  } catch (error) {
+    console.error('❌ Erreur lors de l\'envoi de l\'email:', error);
+    throw error;
+  }
+};
+
+// Envoyer un email de transaction validée
+const sendTransactionValidated = async (email, transactionData) => {
+  const transporter = createTransporter();
+
+  // Mode console si Gmail n'est pas configuré
+  if (!transporter) {
+    console.log('\n📧 ===== EMAIL TRANSACTION VALIDÉE (MODE CONSOLE) =====');
+    console.log(`À: ${email}`);
+    console.log(`Sujet: Échange validé - ${transactionData.transaction_id}`);
+    console.log(`\nBonjour ${transactionData.userName},\n`);
+    console.log(`Bonne nouvelle! Votre demande d'échange a été validée avec succès.`);
+    console.log(`\nDétails:`);
+    console.log(`- ID: ${transactionData.transaction_id}`);
+    console.log(`- Montant: ${transactionData.amount} FCFA`);
+    console.log(`- Vers: ${transactionData.to_number}`);
+    console.log(`\nVotre transaction a été complétée avec succès.`);
+    console.log('========================================================\n');
+    return true;
+  }
+
+  // Envoi réel par Gmail
+  try {
+    const info = await transporter.sendMail({
+      from: `"${process.env.EMAIL_FROM_NAME || 'EMB Transfer'}" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: `✅ Échange validé - ${transactionData.transaction_id}`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              background-color: #0a0a0a;
+              color: #ffffff;
+              margin: 0;
+              padding: 0;
+            }
+            .container {
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 40px 20px;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 40px;
+            }
+            .logo {
+              font-size: 32px;
+              font-weight: bold;
+              color: #FF3B38;
+              margin-bottom: 10px;
+            }
+            .content {
+              background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+              border: 2px solid #4CAF50;
+              border-radius: 16px;
+              padding: 40px;
+            }
+            .success-icon {
+              text-align: center;
+              font-size: 64px;
+              margin: 20px 0;
+            }
+            .transaction-id {
+              background-color: #4CAF50;
+              color: #ffffff;
+              font-size: 24px;
+              font-weight: bold;
+              padding: 15px;
+              border-radius: 8px;
+              text-align: center;
+              margin: 20px 0;
+            }
+            .details-table {
+              width: 100%;
+              margin: 20px 0;
+              border-collapse: collapse;
+            }
+            .details-table td {
+              padding: 12px;
+              border-bottom: 1px solid #333;
+            }
+            .details-table td:first-child {
+              color: #999;
+              width: 40%;
+            }
+            .details-table td:last-child {
+              color: #fff;
+              font-weight: bold;
+              text-align: right;
+            }
+            .status-badge {
+              display: inline-block;
+              background-color: #4CAF50;
+              color: #fff;
+              padding: 8px 16px;
+              border-radius: 20px;
+              font-size: 14px;
+              font-weight: bold;
+            }
+            .message {
+              color: #cccccc;
+              line-height: 1.6;
+              margin: 20px 0;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 40px;
+              color: #666666;
+              font-size: 12px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="logo">EMILE TRANSFER+</div>
+            </div>
+
+            <div class="content">
+              <div class="success-icon">✅</div>
+              <h1 style="color: #4CAF50; margin-top: 0; text-align: center;">Échange validé avec succès!</h1>
+
+              <p class="message">
+                Bonjour <strong>${transactionData.userName}</strong>,<br><br>
+                Bonne nouvelle! Votre demande d'échange a été validée avec succès par notre équipe.
+              </p>
+
+              <div class="transaction-id">${transactionData.transaction_id}</div>
+
+              <table class="details-table">
+                <tr>
+                  <td>Montant échangé</td>
+                  <td style="color: #4CAF50;">${transactionData.amount} FCFA</td>
+                </tr>
+                <tr>
+                  <td>Commission</td>
+                  <td>${transactionData.commission} FCFA</td>
+                </tr>
+                <tr>
+                  <td>Numéro source</td>
+                  <td>${transactionData.from_number}</td>
+                </tr>
+                <tr>
+                  <td>Numéro destination</td>
+                  <td>${transactionData.to_number}</td>
+                </tr>
+                <tr>
+                  <td>Statut</td>
+                  <td><span class="status-badge">Validé</span></td>
+                </tr>
+              </table>
+
+              <p class="message">
+                Votre transaction a été complétée avec succès. Les fonds ont été transférés vers le numéro de destination.
+              </p>
+
+              <p class="message" style="background-color: rgba(76, 175, 80, 0.1); border-left: 4px solid #4CAF50; padding: 15px;">
+                <strong>Merci d'avoir utilisé EMB Transfer!</strong><br>
+                N'hésitez pas à nous contacter si vous avez des questions.
+              </p>
+            </div>
+
+            <div class="footer">
+              <p>
+                Cet email a été envoyé automatiquement par EMB Transfer.<br>
+                Merci de ne pas répondre à cet email.
+              </p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `
+        EMILE TRANSFER+
+
+        ✅ Échange validé avec succès!
+
+        Bonjour ${transactionData.userName},
+
+        Bonne nouvelle! Votre demande d'échange a été validée.
+
+        ID Transaction: ${transactionData.transaction_id}
+        Montant: ${transactionData.amount} FCFA
+        Commission: ${transactionData.commission} FCFA
+        De: ${transactionData.from_number}
+        Vers: ${transactionData.to_number}
+        Statut: Validé
+
+        Votre transaction a été complétée avec succès.
+
+        Merci d'avoir utilisé EMB Transfer!
+
+        Cordialement,
+        L'équipe EMB Transfer
+      `
+    });
+
+    console.log('✅ Email de transaction validée envoyé:', info.messageId);
+    return true;
+  } catch (error) {
+    console.error('❌ Erreur lors de l\'envoi de l\'email:', error);
+    throw error;
+  }
+};
+
+// Envoyer un email de transaction rejetée
+const sendTransactionRejected = async (email, transactionData) => {
+  const transporter = createTransporter();
+
+  // Mode console si Gmail n'est pas configuré
+  if (!transporter) {
+    console.log('\n📧 ===== EMAIL TRANSACTION REJETÉE (MODE CONSOLE) =====');
+    console.log(`À: ${email}`);
+    console.log(`Sujet: Échange rejeté - ${transactionData.transaction_id}`);
+    console.log(`\nBonjour ${transactionData.userName},\n`);
+    console.log(`Votre demande d'échange a été rejetée.`);
+    console.log(`\nDétails:`);
+    console.log(`- ID: ${transactionData.transaction_id}`);
+    console.log(`- Montant: ${transactionData.amount} FCFA`);
+    if (transactionData.comment) {
+      console.log(`- Raison: ${transactionData.comment}`);
+    }
+    console.log(`\nVeuillez nous contacter pour plus d'informations.`);
+    console.log('=========================================================\n');
+    return true;
+  }
+
+  // Envoi réel par Gmail
+  try {
+    const info = await transporter.sendMail({
+      from: `"${process.env.EMAIL_FROM_NAME || 'EMB Transfer'}" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: `Échange rejeté - ${transactionData.transaction_id}`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              background-color: #0a0a0a;
+              color: #ffffff;
+              margin: 0;
+              padding: 0;
+            }
+            .container {
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 40px 20px;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 40px;
+            }
+            .logo {
+              font-size: 32px;
+              font-weight: bold;
+              color: #FF3B38;
+              margin-bottom: 10px;
+            }
+            .content {
+              background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+              border: 2px solid #FF3B38;
+              border-radius: 16px;
+              padding: 40px;
+            }
+            .error-icon {
+              text-align: center;
+              font-size: 64px;
+              margin: 20px 0;
+            }
+            .transaction-id {
+              background-color: #FF3B38;
+              color: #ffffff;
+              font-size: 24px;
+              font-weight: bold;
+              padding: 15px;
+              border-radius: 8px;
+              text-align: center;
+              margin: 20px 0;
+            }
+            .details-table {
+              width: 100%;
+              margin: 20px 0;
+              border-collapse: collapse;
+            }
+            .details-table td {
+              padding: 12px;
+              border-bottom: 1px solid #333;
+            }
+            .details-table td:first-child {
+              color: #999;
+              width: 40%;
+            }
+            .details-table td:last-child {
+              color: #fff;
+              font-weight: bold;
+              text-align: right;
+            }
+            .status-badge {
+              display: inline-block;
+              background-color: #FF3B38;
+              color: #fff;
+              padding: 8px 16px;
+              border-radius: 20px;
+              font-size: 14px;
+              font-weight: bold;
+            }
+            .message {
+              color: #cccccc;
+              line-height: 1.6;
+              margin: 20px 0;
+            }
+            .reason-box {
+              background-color: rgba(255, 59, 56, 0.1);
+              border-left: 4px solid #FF3B38;
+              padding: 15px;
+              margin: 20px 0;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 40px;
+              color: #666666;
+              font-size: 12px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="logo">EMILE TRANSFER+</div>
+            </div>
+
+            <div class="content">
+              <div class="error-icon">❌</div>
+              <h1 style="color: #FF3B38; margin-top: 0; text-align: center;">Échange rejeté</h1>
+
+              <p class="message">
+                Bonjour <strong>${transactionData.userName}</strong>,<br><br>
+                Nous sommes désolés de vous informer que votre demande d'échange a été rejetée.
+              </p>
+
+              <div class="transaction-id">${transactionData.transaction_id}</div>
+
+              <table class="details-table">
+                <tr>
+                  <td>Montant</td>
+                  <td>${transactionData.amount} FCFA</td>
+                </tr>
+                <tr>
+                  <td>Numéro source</td>
+                  <td>${transactionData.from_number}</td>
+                </tr>
+                <tr>
+                  <td>Numéro destination</td>
+                  <td>${transactionData.to_number}</td>
+                </tr>
+                <tr>
+                  <td>Statut</td>
+                  <td><span class="status-badge">Rejeté</span></td>
+                </tr>
+              </table>
+
+              ${transactionData.comment ? `
+                <div class="reason-box">
+                  <strong>Raison du rejet:</strong><br>
+                  ${transactionData.comment}
+                </div>
+              ` : ''}
+
+              <p class="message">
+                Si vous pensez qu'il s'agit d'une erreur ou si vous avez des questions, n'hésitez pas à nous contacter.
+              </p>
+            </div>
+
+            <div class="footer">
+              <p>
+                Cet email a été envoyé automatiquement par EMB Transfer.<br>
+                Merci de ne pas répondre à cet email.
+              </p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `
+        EMILE TRANSFER+
+
+        Échange rejeté
+
+        Bonjour ${transactionData.userName},
+
+        Votre demande d'échange a été rejetée.
+
+        ID Transaction: ${transactionData.transaction_id}
+        Montant: ${transactionData.amount} FCFA
+        De: ${transactionData.from_number}
+        Vers: ${transactionData.to_number}
+        Statut: Rejeté
+
+        ${transactionData.comment ? `Raison: ${transactionData.comment}` : ''}
+
+        Si vous avez des questions, contactez-nous.
+
+        Cordialement,
+        L'équipe EMB Transfer
+      `
+    });
+
+    console.log('✅ Email de transaction rejetée envoyé:', info.messageId);
+    return true;
+  } catch (error) {
+    console.error('❌ Erreur lors de l\'envoi de l\'email:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   generateVerificationCode,
   sendVerificationCode,
-  sendPasswordResetCode
+  sendPasswordResetCode,
+  sendTransactionCreated,
+  sendTransactionValidated,
+  sendTransactionRejected
 };

@@ -17,6 +17,7 @@ const usersRoutes = require('./routes/users');
 const kycRoutes = require('./routes/kyc');
 const chatRoutes = require('./routes/chat');
 const pushRoutes = require('./routes/push');
+const legalRoutes = require('./routes/legal');
 
 // Initialiser la base de données
 const db = require('./config/database');
@@ -57,7 +58,8 @@ app.get('/', (req, res) => {
       users: '/api/users',
       kyc: '/api/kyc',
       chat: '/api/chat',
-      push: '/api/push'
+      push: '/api/push',
+      legal: '/api/legal'
     }
   });
 });
@@ -75,6 +77,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/kyc', kycRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/push', pushRoutes);
+app.use('/api/legal', legalRoutes);
 
 // Servir les fichiers statiques (uploads)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

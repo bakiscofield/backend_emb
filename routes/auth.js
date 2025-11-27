@@ -13,7 +13,9 @@ router.post('/request-verification-code', [
   body('email').isEmail().withMessage('Email invalide'),
   body('phone').isMobilePhone('any').withMessage('Numéro de téléphone invalide'),
   body('name').trim().notEmpty().withMessage('Le nom est requis'),
-  body('password').isLength({ min: 6 }).withMessage('Le mot de passe doit contenir au moins 6 caractères')
+  body('password').isLength({ min: 6 }).withMessage('Le mot de passe doit contenir au moins 6 caractères'),
+  body('acceptCGU').isBoolean().equals('true').withMessage('Vous devez accepter les Conditions Générales d\'Utilisation'),
+  body('acceptPrivacyPolicy').isBoolean().equals('true').withMessage('Vous devez accepter la Politique de Confidentialité')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -21,7 +23,15 @@ router.post('/request-verification-code', [
       return res.status(400).json({ success: false, errors: errors.array() });
     }
 
-    const { email, phone, name, password } = req.body;
+    const { email, phone, name, password, acceptCGU, acceptPrivacyPolicy } = req.body;
+
+    // Vérifier l'acceptation des CGU et de la politique de confidentialité
+    if (!acceptCGU || !acceptPrivacyPolicy) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vous devez accepter les CGU et la Politique de Confidentialité pour créer un compte'
+      });
+    }
 
     // Vérifier si l'email existe déjà
     const existingEmail = await prisma.users.findUnique({
@@ -168,13 +178,19 @@ router.post('/verify-and-register', [
     }
 
     // Code correct, créer le compte
+    const now = new Date();
     const newUser = await prisma.users.create({
       data: {
         phone: verification.phone,
         name: verification.name,
         email: verification.email,
         password: verification.password,
-        newsletter_subscribed: true
+        newsletter_subscribed: true,
+        cgu_accepted: 1,
+        cgu_accepted_at: now,
+        privacy_policy_accepted: 1,
+        privacy_policy_accepted_at: now,
+        terms_version: '1.0'
       }
     });
 
@@ -276,7 +292,9 @@ router.post('/register', [
   body('phone').isMobilePhone('any').withMessage('Numéro de téléphone invalide'),
   body('name').trim().notEmpty().withMessage('Le nom est requis'),
   body('email').isEmail().withMessage('Email invalide et requis'),
-  body('password').isLength({ min: 6 }).withMessage('Le mot de passe doit contenir au moins 6 caractères')
+  body('password').isLength({ min: 6 }).withMessage('Le mot de passe doit contenir au moins 6 caractères'),
+  body('acceptCGU').optional().isBoolean().withMessage('L\'acceptation des CGU doit être un booléen'),
+  body('acceptPrivacyPolicy').optional().isBoolean().withMessage('L\'acceptation de la politique doit être un booléen')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -284,7 +302,15 @@ router.post('/register', [
       return res.status(400).json({ success: false, errors: errors.array() });
     }
 
-    const { phone, name, email, password } = req.body;
+    const { phone, name, email, password, acceptCGU, acceptPrivacyPolicy } = req.body;
+
+    // Vérifier l'acceptation des CGU (optionnel pour compatibilité ascendante)
+    if (acceptCGU === false || acceptPrivacyPolicy === false) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vous devez accepter les CGU et la Politique de Confidentialité pour créer un compte'
+      });
+    }
 
     // Vérifier si l'utilisateur existe déjà
     const existingUser = await prisma.users.findUnique({
@@ -302,12 +328,18 @@ router.post('/register', [
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Insérer l'utilisateur
+    const now = new Date();
     const newUser = await prisma.users.create({
       data: {
         phone,
         name,
         email: email || null,
-        password: hashedPassword
+        password: hashedPassword,
+        cgu_accepted: acceptCGU ? 1 : 0,
+        cgu_accepted_at: acceptCGU ? now : null,
+        privacy_policy_accepted: acceptPrivacyPolicy ? 1 : 0,
+        privacy_policy_accepted_at: acceptPrivacyPolicy ? now : null,
+        terms_version: '1.0'
       }
     });
 

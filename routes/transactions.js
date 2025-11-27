@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const prisma = require('../config/prisma');
 const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const { createNotification } = require('./notifications');
+const { sendTransactionCreated, sendTransactionValidated, sendTransactionRejected } = require('../utils/emailService');
 
 const router = express.Router();
 
@@ -155,6 +156,25 @@ router.post('/create', authMiddleware, [
       message: `${req.user.name || 'Un client'} a créé une demande d'échange de ${amount} FCFA`,
       transaction_id: result.id
     });
+
+    // Envoyer un email de confirmation à l'utilisateur si l'email est disponible
+    if (req.user.email) {
+      try {
+        await sendTransactionCreated(req.user.email, {
+          transaction_id: transactionId,
+          userName: req.user.name || 'Client',
+          amount,
+          commission: commissionAmount,
+          tax_amount: taxAmount,
+          total_amount: totalAmount,
+          from_number: sourceNumber,
+          to_number: destNumber
+        });
+      } catch (emailError) {
+        // Ne pas faire échouer la transaction si l'email échoue
+        console.error('Erreur lors de l\'envoi de l\'email de confirmation:', emailError);
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -421,6 +441,36 @@ router.put('/:id/validate', adminMiddleware, [
       message: notificationMessage,
       transaction_id: req.params.id
     });
+
+    // Récupérer les informations de l'utilisateur pour l'email
+    const user = await prisma.users.findUnique({
+      where: { id: transaction.user_id },
+      select: { email: true, name: true }
+    });
+
+    // Envoyer un email de notification à l'utilisateur si l'email est disponible
+    if (user && user.email) {
+      try {
+        const emailData = {
+          transaction_id: transaction.transaction_id,
+          userName: user.name || 'Client',
+          amount: transaction.amount,
+          commission: transaction.total_amount - transaction.amount,
+          from_number: transaction.from_number || transaction.tmoney_number,
+          to_number: transaction.to_number || transaction.flooz_number,
+          comment: comment || null
+        };
+
+        if (status === 'validated') {
+          await sendTransactionValidated(user.email, emailData);
+        } else {
+          await sendTransactionRejected(user.email, emailData);
+        }
+      } catch (emailError) {
+        // Ne pas faire échouer la validation si l'email échoue
+        console.error('Erreur lors de l\'envoi de l\'email de notification:', emailError);
+      }
+    }
 
     res.json({
       success: true,
