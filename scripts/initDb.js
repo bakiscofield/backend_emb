@@ -43,7 +43,8 @@ async function initDatabase() {
       ['VIEW_TRANSACTION_STATS', 'Voir les statistiques', 'Accéder aux statistiques des transactions', 'TRANSACTIONS'],
 
       // Gestion des utilisateurs
-      ['MANAGE_USERS', 'Gérer les utilisateurs', 'Voir et gérer les comptes utilisateurs', 'USERS'],
+      ['view_users', 'Voir les utilisateurs', 'Consulter la liste des utilisateurs et leurs informations', 'USERS'],
+      ['manage_users', 'Gérer les utilisateurs', 'Activer/désactiver des utilisateurs et gérer leurs abonnements', 'USERS'],
       ['MANAGE_ADMINS', 'Gérer les administrateurs', 'Créer, modifier, désactiver les comptes admin', 'USERS'],
       ['MANAGE_PERMISSIONS', 'Gérer les permissions', 'Attribuer et retirer des permissions aux admins', 'USERS'],
 
