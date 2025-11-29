@@ -146,6 +146,8 @@ router.post(
     body('to_method_id').isInt().withMessage('ID du moyen de paiement destination invalide'),
     body('fee_percentage').optional().isFloat({ min: 0 }).withMessage('Le pourcentage de frais doit être >= 0'),
     body('tax_amount').optional().isFloat({ min: 0 }).withMessage('Le montant de taxe doit être >= 0'),
+    body('min_amount').optional().isFloat({ min: 0 }).withMessage('Le montant minimum doit être >= 0'),
+    body('max_amount').optional().isFloat({ min: 0 }).withMessage('Le montant maximum doit être >= 0'),
     body('payment_syntax_type').optional().isIn(['TEXTE', 'LIEN', 'AUTRE']).withMessage('Type de syntaxe invalide'),
     body('payment_syntax_value').optional().isString().withMessage('La valeur de syntaxe doit être une chaîne'),
     body('fields').optional().isArray().withMessage('Les champs doivent être un tableau')
@@ -161,7 +163,7 @@ router.post(
     }
 
     try {
-      const { from_method_id, to_method_id, fee_percentage, tax_amount, payment_syntax_type, payment_syntax_value, fields } = req.body;
+      const { from_method_id, to_method_id, fee_percentage, tax_amount, min_amount, max_amount, payment_syntax_type, payment_syntax_value, fields } = req.body;
 
       // Vérifier que les deux méthodes sont différentes
       if (from_method_id === to_method_id) {
@@ -208,6 +210,8 @@ router.post(
           to_method_id,
           fee_percentage: fee_percentage || 0,
           tax_amount: tax_amount || 0,
+          min_amount: min_amount || 500,
+          max_amount: max_amount || 500000,
           payment_syntax_type: payment_syntax_type || 'TEXTE',
           payment_syntax_value: payment_syntax_value || '',
           is_active: true,
@@ -273,6 +277,8 @@ router.put(
   [
     body('fee_percentage').optional().isFloat({ min: 0 }),
     body('tax_amount').optional().isFloat({ min: 0 }),
+    body('min_amount').optional().isFloat({ min: 0 }),
+    body('max_amount').optional().isFloat({ min: 0 }),
     body('is_active').optional().isBoolean(),
     body('payment_syntax_type').optional().isIn(['TEXTE', 'LIEN', 'AUTRE']).withMessage('Type de syntaxe invalide'),
     body('payment_syntax_value').optional().isString().withMessage('La valeur de syntaxe doit être une chaîne'),
@@ -290,7 +296,7 @@ router.put(
 
     try {
       const { id } = req.params;
-      const { fee_percentage, tax_amount, is_active, payment_syntax_type, payment_syntax_value, fields } = req.body;
+      const { fee_percentage, tax_amount, min_amount, max_amount, is_active, payment_syntax_type, payment_syntax_value, fields } = req.body;
 
       // Vérifier si la paire existe
       const existing = await prisma.exchange_pairs.findUnique({
@@ -309,6 +315,8 @@ router.put(
 
       if (fee_percentage !== undefined) updateData.fee_percentage = fee_percentage;
       if (tax_amount !== undefined) updateData.tax_amount = tax_amount;
+      if (min_amount !== undefined) updateData.min_amount = min_amount;
+      if (max_amount !== undefined) updateData.max_amount = max_amount;
       if (is_active !== undefined) updateData.is_active = is_active;
       if (payment_syntax_type !== undefined) updateData.payment_syntax_type = payment_syntax_type;
       if (payment_syntax_value !== undefined) updateData.payment_syntax_value = payment_syntax_value;

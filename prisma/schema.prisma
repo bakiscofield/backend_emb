@@ -116,6 +116,8 @@ model exchange_pairs {
   to_method_id                                                   Int
   fee_percentage                                                 Float?            @default(0)
   tax_amount                                                     Float?            @default(0)
+  min_amount                                                     Float?            @default(500)
+  max_amount                                                     Float?            @default(500000)
   is_active                                                      Boolean?          @default(true)
   created_at                                                     DateTime?         @default(now())
   payment_syntax_type                                            String?           @default("TEXTE")
