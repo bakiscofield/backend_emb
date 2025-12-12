@@ -4,6 +4,7 @@ const router = express.Router();
 const prisma = require('../config/prisma');
 const { checkPermission, checkAnyPermission } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
+const { sendNewsletter } = require('../utils/emailService');
 
 // Récupérer toutes les newsletters
 router.get('/', checkAnyPermission(['VIEW_NEWSLETTERS', 'CREATE_NEWSLETTERS']), async (req, res) => {
@@ -266,17 +267,17 @@ router.post('/:id/send', checkPermission('CREATE_NEWSLETTERS'), [
       });
     }
 
-    // Récupérer les destinataires selon le type
+    // Récupérer les destinataires selon le type avec leur email et nom
     let recipients = [];
 
     if (recipient_type === 'all') {
       recipients = await prisma.users.findMany({
-        select: { id: true }
+        select: { id: true, email: true, name: true }
       });
     } else if (recipient_type === 'subscribers') {
       recipients = await prisma.users.findMany({
         where: { newsletter_subscribed: true },
-        select: { id: true }
+        select: { id: true, email: true, name: true }
       });
     } else if (recipient_type === 'active') {
       // Utilisateurs ayant fait au moins une transaction
@@ -284,7 +285,11 @@ router.post('/:id/send', checkPermission('CREATE_NEWSLETTERS'), [
         select: { user_id: true },
         distinct: ['user_id']
       });
-      recipients = transactionUsers.map(t => ({ id: t.user_id }));
+      const userIds = transactionUsers.map(t => t.user_id);
+      recipients = await prisma.users.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, email: true, name: true }
+      });
     }
 
     if (recipients.length === 0) {
@@ -321,10 +326,55 @@ router.post('/:id/send', checkPermission('CREATE_NEWSLETTERS'), [
       }
     });
 
+    // Envoyer les emails en arrière-plan
+    console.log(`📧 Envoi de ${recipients.length} newsletters en cours...`);
+    let successCount = 0;
+    let errorCount = 0;
+
+    // Envoyer les emails un par un (TODO: utiliser une queue pour beaucoup de destinataires)
+    for (const recipient of recipients) {
+      try {
+        await sendNewsletter(recipient.email, recipient.name, newsletter);
+
+        // Mettre à jour sent_at pour ce destinataire
+        await prisma.newsletter_recipients.updateMany({
+          where: {
+            newsletter_id: parseInt(id),
+            user_id: recipient.id
+          },
+          data: {
+            sent_at: new Date(),
+            status: 'sent'
+          }
+        });
+
+        successCount++;
+      } catch (error) {
+        console.error(`Erreur envoi à ${recipient.email}:`, error.message);
+
+        // Marquer comme échoué
+        await prisma.newsletter_recipients.updateMany({
+          where: {
+            newsletter_id: parseInt(id),
+            user_id: recipient.id
+          },
+          data: {
+            status: 'failed'
+          }
+        });
+
+        errorCount++;
+      }
+    }
+
+    console.log(`✅ ${successCount} newsletters envoyées, ${errorCount} erreurs`);
+
     res.json({
       success: true,
-      message: `Newsletter envoyée à ${recipients.length} destinataires`,
-      recipient_count: recipients.length
+      message: `Newsletter envoyée à ${successCount}/${recipients.length} destinataires`,
+      recipient_count: recipients.length,
+      success_count: successCount,
+      error_count: errorCount
     });
   } catch (error) {
     res.status(500).json({

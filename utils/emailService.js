@@ -1054,6 +1054,49 @@ const sendEmailFromTemplate = async (templateType, recipientEmail, data) => {
   }
 };
 
+/**
+ * Envoyer une newsletter à un utilisateur
+ */
+const sendNewsletter = async (userEmail, userName, newsletter) => {
+  const transporter = createTransporter();
+
+  // Mode console si Gmail n'est pas configuré
+  if (!transporter) {
+    console.log('\n📧 ===== NEWSLETTER (MODE CONSOLE) =====');
+    console.log(`À: ${userEmail} (${userName})`);
+    console.log(`Sujet: ${newsletter.subject}`);
+    console.log(`\n${newsletter.content}`);
+    console.log('=====================================\n');
+    return true;
+  }
+
+  // Envoi réel par Gmail
+  try {
+    const mailOptions = {
+      from: `"${process.env.EMAIL_FROM_NAME || 'EMB Transfer'}" <${process.env.EMAIL_USER}>`,
+      to: userEmail,
+      subject: newsletter.subject,
+      text: newsletter.content,
+      html: newsletter.content_html || `<div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2 style="color: #e94560;">${newsletter.title}</h2>
+        <div style="white-space: pre-wrap;">${newsletter.content}</div>
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #ddd;">
+        <p style="color: #666; font-size: 12px;">
+          Vous recevez cet email car vous êtes inscrit à notre newsletter.<br>
+          Pour vous désabonner, connectez-vous à votre compte et modifiez vos préférences.
+        </p>
+      </div>`
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Newsletter envoyée à ${userEmail}`);
+    return true;
+  } catch (error) {
+    console.error(`❌ Erreur envoi newsletter à ${userEmail}:`, error.message);
+    throw error;
+  }
+};
+
 module.exports = {
   generateVerificationCode,
   sendVerificationCode,
@@ -1063,5 +1106,6 @@ module.exports = {
   sendTransactionRejected,
   sendEmail,
   sendEmailFromTemplate,
-  replaceVariables
+  replaceVariables,
+  sendNewsletter
 };
