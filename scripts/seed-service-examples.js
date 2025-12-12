@@ -221,8 +221,7 @@ async function seed() {
           is_required: true,
           field_order: 1
         }
-      ],
-      skipDuplicates: true
+      ]
     });
     console.log('✅ TMoney → Canalbox créé avec champs additionnels\n');
 
@@ -281,8 +280,7 @@ async function seed() {
           is_required: true,
           field_order: 1
         }
-      ],
-      skipDuplicates: true
+      ]
     });
     console.log('✅ TMoney → Ecobank créé avec instructions\n');
 
@@ -325,8 +323,7 @@ async function seed() {
           is_required: true,
           field_order: 0
         }
-      ],
-      skipDuplicates: true
+      ]
     });
     console.log('✅ TMoney → Cash Power créé\n');
 

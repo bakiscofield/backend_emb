@@ -299,8 +299,7 @@ router.post('/:id/send', checkPermission('CREATE_NEWSLETTERS'), [
       data: recipients.map(recipient => ({
         newsletter_id: parseInt(id),
         user_id: recipient.id
-      })),
-      skipDuplicates: true
+      }))
     });
 
     // Mettre à jour le statut de la newsletter
