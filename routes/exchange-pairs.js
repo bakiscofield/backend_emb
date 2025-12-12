@@ -150,6 +150,34 @@ router.post(
     body('max_amount').optional().isFloat({ min: 0 }).withMessage('Le montant maximum doit être >= 0'),
     body('payment_syntax_type').optional().isIn(['TEXTE', 'LIEN', 'AUTRE']).withMessage('Type de syntaxe invalide'),
     body('payment_syntax_value').optional().isString().withMessage('La valeur de syntaxe doit être une chaîne'),
+    body('category').optional({ nullable: true, checkFalsy: true }).isIn(['money_exchange', 'credit', 'subscription', 'purchase', 'bank_service']).withMessage('Catégorie invalide'),
+    body('requires_additional_info').optional({ nullable: true }).isBoolean().withMessage('requires_additional_info doit être un booléen'),
+    body('automatic_processing').optional({ nullable: true }).isBoolean().withMessage('automatic_processing doit être un booléen'),
+    body('instruction_title').optional({ nullable: true, checkFalsy: true }),
+    body('instruction_content').optional({ nullable: true, checkFalsy: true }),
+    body('instruction_link_url').optional({ nullable: true, checkFalsy: true }).custom((value) => {
+      if (value && value.trim() !== '') {
+        // Valider seulement si une URL est fournie
+        const urlPattern = /^https?:\/\/.+/;
+        if (!urlPattern.test(value)) {
+          throw new Error('instruction_link_url doit être une URL valide');
+        }
+      }
+      return true;
+    }),
+    body('instruction_link_text').optional({ nullable: true, checkFalsy: true }),
+    body('from_number_label').optional({ nullable: true, checkFalsy: true }),
+    body('from_number_placeholder').optional({ nullable: true, checkFalsy: true }),
+    body('to_number_label').optional({ nullable: true, checkFalsy: true }),
+    body('to_number_placeholder').optional({ nullable: true, checkFalsy: true }),
+    body('show_to_number').optional({ nullable: true }).isBoolean().withMessage('show_to_number doit être un booléen'),
+    body('amount_label').optional({ nullable: true, checkFalsy: true }),
+    body('amount_placeholder').optional({ nullable: true, checkFalsy: true }),
+    body('reference_required').optional({ nullable: true }).isBoolean().withMessage('reference_required doit être un booléen'),
+    body('reference_label').optional({ nullable: true, checkFalsy: true }),
+    body('reference_placeholder').optional({ nullable: true, checkFalsy: true }),
+    body('validated_email_template_id').isInt({ min: 1 }).withMessage('Le template email de validation est requis'),
+    body('rejected_email_template_id').isInt({ min: 1 }).withMessage('Le template email de rejet est requis'),
     body('fields').optional().isArray().withMessage('Les champs doivent être un tableau')
   ],
   async (req, res) => {
@@ -163,7 +191,36 @@ router.post(
     }
 
     try {
-      const { from_method_id, to_method_id, fee_percentage, tax_amount, min_amount, max_amount, payment_syntax_type, payment_syntax_value, fields } = req.body;
+      const {
+        from_method_id,
+        to_method_id,
+        fee_percentage,
+        tax_amount,
+        min_amount,
+        max_amount,
+        payment_syntax_type,
+        payment_syntax_value,
+        category,
+        requires_additional_info,
+        automatic_processing,
+        instruction_title,
+        instruction_content,
+        instruction_link_url,
+        instruction_link_text,
+        from_number_label,
+        from_number_placeholder,
+        to_number_label,
+        to_number_placeholder,
+        show_to_number,
+        amount_label,
+        amount_placeholder,
+        reference_required,
+        reference_label,
+        reference_placeholder,
+        validated_email_template_id,
+        rejected_email_template_id,
+        fields
+      } = req.body;
 
       // Vérifier que les deux méthodes sont différentes
       if (from_method_id === to_method_id) {
@@ -204,6 +261,9 @@ router.post(
       }
 
       // Créer la paire d'échange avec ses champs
+      // Les champs de configuration du formulaire ne sont utilisés que pour les abonnements
+      const isSubscription = category === 'subscription';
+
       const newPair = await prisma.exchange_pairs.create({
         data: {
           from_method_id,
@@ -214,6 +274,25 @@ router.post(
           max_amount: max_amount || 500000,
           payment_syntax_type: payment_syntax_type || 'TEXTE',
           payment_syntax_value: payment_syntax_value || '',
+          category: category || null,
+          requires_additional_info: requires_additional_info || false,
+          automatic_processing: automatic_processing || false,
+          instruction_title: instruction_title || null,
+          instruction_content: instruction_content || null,
+          instruction_link_url: instruction_link_url || null,
+          instruction_link_text: instruction_link_text || null,
+          from_number_label: isSubscription ? (from_number_label || null) : null,
+          from_number_placeholder: isSubscription ? (from_number_placeholder || null) : null,
+          to_number_label: isSubscription ? (to_number_label || null) : null,
+          to_number_placeholder: isSubscription ? (to_number_placeholder || null) : null,
+          show_to_number: isSubscription ? (show_to_number !== undefined ? show_to_number : true) : true,
+          amount_label: isSubscription ? (amount_label || 'Montant') : 'Montant',
+          amount_placeholder: isSubscription ? (amount_placeholder || null) : null,
+          reference_required: isSubscription ? (reference_required !== undefined ? reference_required : true) : true,
+          reference_label: isSubscription ? (reference_label || 'Référence de paiement') : 'Référence de paiement',
+          reference_placeholder: isSubscription ? (reference_placeholder || null) : null,
+          validated_email_template_id,
+          rejected_email_template_id,
           is_active: true,
           exchange_fields: fields && fields.length > 0 ? {
             create: fields.map((field, index) => ({
@@ -282,6 +361,34 @@ router.put(
     body('is_active').optional().isBoolean(),
     body('payment_syntax_type').optional().isIn(['TEXTE', 'LIEN', 'AUTRE']).withMessage('Type de syntaxe invalide'),
     body('payment_syntax_value').optional().isString().withMessage('La valeur de syntaxe doit être une chaîne'),
+    body('category').optional({ nullable: true, checkFalsy: true }).isIn(['money_exchange', 'credit', 'subscription', 'purchase', 'bank_service']).withMessage('Catégorie invalide'),
+    body('requires_additional_info').optional({ nullable: true }).isBoolean().withMessage('requires_additional_info doit être un booléen'),
+    body('automatic_processing').optional({ nullable: true }).isBoolean().withMessage('automatic_processing doit être un booléen'),
+    body('instruction_title').optional({ nullable: true, checkFalsy: true }),
+    body('instruction_content').optional({ nullable: true, checkFalsy: true }),
+    body('instruction_link_url').optional({ nullable: true, checkFalsy: true }).custom((value) => {
+      if (value && value.trim() !== '') {
+        // Valider seulement si une URL est fournie
+        const urlPattern = /^https?:\/\/.+/;
+        if (!urlPattern.test(value)) {
+          throw new Error('instruction_link_url doit être une URL valide');
+        }
+      }
+      return true;
+    }),
+    body('instruction_link_text').optional({ nullable: true, checkFalsy: true }),
+    body('from_number_label').optional({ nullable: true, checkFalsy: true }),
+    body('from_number_placeholder').optional({ nullable: true, checkFalsy: true }),
+    body('to_number_label').optional({ nullable: true, checkFalsy: true }),
+    body('to_number_placeholder').optional({ nullable: true, checkFalsy: true }),
+    body('show_to_number').optional({ nullable: true }).isBoolean(),
+    body('amount_label').optional({ nullable: true, checkFalsy: true }),
+    body('amount_placeholder').optional({ nullable: true, checkFalsy: true }),
+    body('reference_required').optional({ nullable: true }).isBoolean(),
+    body('reference_label').optional({ nullable: true, checkFalsy: true }),
+    body('reference_placeholder').optional({ nullable: true, checkFalsy: true }),
+    body('validated_email_template_id').optional().isInt({ min: 1 }).withMessage('Le template email de validation doit être un ID valide'),
+    body('rejected_email_template_id').optional().isInt({ min: 1 }).withMessage('Le template email de rejet doit être un ID valide'),
     body('fields').optional().isArray()
   ],
   async (req, res) => {
@@ -296,7 +403,35 @@ router.put(
 
     try {
       const { id } = req.params;
-      const { fee_percentage, tax_amount, min_amount, max_amount, is_active, payment_syntax_type, payment_syntax_value, fields } = req.body;
+      const {
+        fee_percentage,
+        tax_amount,
+        min_amount,
+        max_amount,
+        is_active,
+        payment_syntax_type,
+        payment_syntax_value,
+        category,
+        requires_additional_info,
+        automatic_processing,
+        instruction_title,
+        instruction_content,
+        instruction_link_url,
+        instruction_link_text,
+        from_number_label,
+        from_number_placeholder,
+        to_number_label,
+        to_number_placeholder,
+        show_to_number,
+        amount_label,
+        amount_placeholder,
+        reference_required,
+        reference_label,
+        reference_placeholder,
+        validated_email_template_id,
+        rejected_email_template_id,
+        fields
+      } = req.body;
 
       // Vérifier si la paire existe
       const existing = await prisma.exchange_pairs.findUnique({
@@ -320,6 +455,45 @@ router.put(
       if (is_active !== undefined) updateData.is_active = is_active;
       if (payment_syntax_type !== undefined) updateData.payment_syntax_type = payment_syntax_type;
       if (payment_syntax_value !== undefined) updateData.payment_syntax_value = payment_syntax_value;
+      if (category !== undefined) updateData.category = category;
+      if (requires_additional_info !== undefined) updateData.requires_additional_info = requires_additional_info;
+      if (automatic_processing !== undefined) updateData.automatic_processing = automatic_processing;
+      if (instruction_title !== undefined) updateData.instruction_title = instruction_title;
+      if (instruction_content !== undefined) updateData.instruction_content = instruction_content;
+      if (instruction_link_url !== undefined) updateData.instruction_link_url = instruction_link_url;
+      if (instruction_link_text !== undefined) updateData.instruction_link_text = instruction_link_text;
+      if (validated_email_template_id !== undefined) updateData.validated_email_template_id = validated_email_template_id;
+      if (rejected_email_template_id !== undefined) updateData.rejected_email_template_id = rejected_email_template_id;
+
+      // Les champs de configuration du formulaire ne sont utilisés que pour les abonnements
+      const updatedCategory = category !== undefined ? category : existing.category;
+      const isSubscription = updatedCategory === 'subscription';
+
+      if (isSubscription) {
+        // Mettre à jour les champs de configuration seulement pour les abonnements
+        if (from_number_label !== undefined) updateData.from_number_label = from_number_label;
+        if (from_number_placeholder !== undefined) updateData.from_number_placeholder = from_number_placeholder;
+        if (to_number_label !== undefined) updateData.to_number_label = to_number_label;
+        if (to_number_placeholder !== undefined) updateData.to_number_placeholder = to_number_placeholder;
+        if (show_to_number !== undefined) updateData.show_to_number = show_to_number;
+        if (amount_label !== undefined) updateData.amount_label = amount_label;
+        if (amount_placeholder !== undefined) updateData.amount_placeholder = amount_placeholder;
+        if (reference_required !== undefined) updateData.reference_required = reference_required;
+        if (reference_label !== undefined) updateData.reference_label = reference_label;
+        if (reference_placeholder !== undefined) updateData.reference_placeholder = reference_placeholder;
+      } else {
+        // Réinitialiser les champs de configuration si ce n'est plus un abonnement
+        updateData.from_number_label = null;
+        updateData.from_number_placeholder = null;
+        updateData.to_number_label = null;
+        updateData.to_number_placeholder = null;
+        updateData.show_to_number = true;
+        updateData.amount_label = 'Montant';
+        updateData.amount_placeholder = null;
+        updateData.reference_required = true;
+        updateData.reference_label = 'Référence de paiement';
+        updateData.reference_placeholder = null;
+      }
 
       // Mettre à jour les champs si fournis
       if (fields !== undefined) {
@@ -400,7 +574,12 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 
     // Vérifier si la paire existe
     const existing = await prisma.exchange_pairs.findUnique({
-      where: { id: parseInt(id) }
+      where: { id: parseInt(id) },
+      include: {
+        _count: {
+          select: { transactions: true }
+        }
+      }
     });
 
     if (!existing) {
@@ -410,7 +589,22 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       });
     }
 
-    // Supprimer la paire (les champs seront supprimés automatiquement via ON DELETE CASCADE)
+    // Vérifier s'il y a des transactions associées
+    const transactionCount = existing._count.transactions;
+    if (transactionCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Impossible de supprimer cette paire d'échange. Elle est utilisée par ${transactionCount} transaction${transactionCount > 1 ? 's' : ''}.`,
+        transactionCount: transactionCount
+      });
+    }
+
+    // Supprimer d'abord les champs personnalisés (exchange_fields)
+    await prisma.exchange_fields.deleteMany({
+      where: { exchange_pair_id: parseInt(id) }
+    });
+
+    // Supprimer la paire
     await prisma.exchange_pairs.delete({
       where: { id: parseInt(id) }
     });
@@ -421,9 +615,18 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     });
   } catch (error) {
     console.error('Erreur lors de la suppression de la paire d\'échange:', error);
+
+    // Gérer les erreurs de contrainte de clé étrangère
+    if (error.code === 'P2003') {
+      return res.status(400).json({
+        success: false,
+        message: 'Impossible de supprimer cette paire d\'échange car elle est utilisée par des transactions existantes.'
+      });
+    }
+
     res.status(500).json({
       success: false,
-      message: 'Erreur serveur'
+      message: 'Erreur serveur lors de la suppression'
     });
   }
 });

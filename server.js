@@ -18,6 +18,7 @@ const kycRoutes = require('./routes/kyc');
 const chatRoutes = require('./routes/chat');
 const pushRoutes = require('./routes/push');
 const legalRoutes = require('./routes/legal');
+const emailTemplatesRoutes = require('./routes/email-templates');
 
 // Initialiser la base de données
 const db = require('./config/database');
@@ -59,7 +60,8 @@ app.get('/', (req, res) => {
       kyc: '/api/kyc',
       chat: '/api/chat',
       push: '/api/push',
-      legal: '/api/legal'
+      legal: '/api/legal',
+      emailTemplates: '/api/email-templates'
     }
   });
 });
@@ -78,6 +80,7 @@ app.use('/api/kyc', kycRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/legal', legalRoutes);
+app.use('/api/email-templates', emailTemplatesRoutes);
 
 // Servir les fichiers statiques (uploads)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

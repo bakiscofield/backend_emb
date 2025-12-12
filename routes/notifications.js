@@ -261,7 +261,7 @@ async function createNotification({ user_id, admin_id, type, title, message, tra
         type,
         title,
         message,
-        transaction_id: transaction_id || null,
+        transaction_id: transaction_id ? parseInt(transaction_id) : null,
         is_read: false
       }
     });

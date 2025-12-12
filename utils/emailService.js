@@ -1,4 +1,6 @@
 const nodemailer = require('nodemailer');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
 // Configuration du transporteur Gmail
 const createTransporter = () => {
@@ -666,6 +668,15 @@ const sendTransactionValidated = async (email, transactionData) => {
                 Bonne nouvelle! Votre demande d'échange a été validée avec succès par notre équipe.
               </p>
 
+              ${transactionData.isSubscription && transactionData.admin_message ? `
+                <div style="background-color: rgba(33, 150, 243, 0.1); border-left: 4px solid #2196F3; padding: 20px; margin: 20px 0; border-radius: 8px;">
+                  <h3 style="color: #2196F3; margin-top: 0;">📋 Message de l'équipe</h3>
+                  <p style="color: #ffffff; white-space: pre-wrap; line-height: 1.6; margin: 10px 0 0 0;">
+                    ${transactionData.admin_message}
+                  </p>
+                </div>
+              ` : ''}
+
               <div class="transaction-id">${transactionData.transaction_id}</div>
 
               <table class="details-table">
@@ -956,11 +967,101 @@ const sendTransactionRejected = async (email, transactionData) => {
   }
 };
 
+// Envoyer un email générique (avec HTML personnalisé)
+const sendEmail = async (to, subject, htmlContent, textContent = null) => {
+  const transporter = createTransporter();
+
+  // Mode console si Gmail n'est pas configuré
+  if (!transporter) {
+    console.log('\n📧 ===== EMAIL GÉNÉRIQUE (MODE CONSOLE) =====');
+    console.log(`À: ${to}`);
+    console.log(`Sujet: ${subject}`);
+    console.log(`\nContenu:\n${textContent || htmlContent.substring(0, 200)}...`);
+    console.log('============================================\n');
+    return true;
+  }
+
+  // Envoi réel par Gmail
+  try {
+    const mailOptions = {
+      from: `"${process.env.EMAIL_FROM_NAME || 'EMB Transfer'}" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      html: htmlContent
+    };
+
+    if (textContent) {
+      mailOptions.text = textContent;
+    }
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Email envoyé:', info.messageId);
+    return true;
+  } catch (error) {
+    console.error('❌ Erreur lors de l\'envoi de l\'email:', error);
+    throw error;
+  }
+};
+
+// Remplacer les variables dans un template
+const replaceVariables = (template, data) => {
+  let result = template;
+
+  // Remplacer les variables simples {{variable}}
+  Object.keys(data).forEach(key => {
+    const regex = new RegExp(`{{${key}}}`, 'g');
+    result = result.replace(regex, data[key] || '');
+  });
+
+  // Gérer les conditions {{#if variable}}...{{/if}}
+  result = result.replace(/{{#if\s+(\w+)}}([\s\S]*?){{\/if}}/g, (match, varName, content) => {
+    return data[varName] ? content : '';
+  });
+
+  return result;
+};
+
+// Envoyer un email à partir d'un template de la base de données
+const sendEmailFromTemplate = async (templateType, recipientEmail, data) => {
+  try {
+    // Récupérer le template depuis la base de données
+    const template = await prisma.email_templates.findUnique({
+      where: { type: templateType }
+    });
+
+    if (!template) {
+      console.error(`❌ Template "${templateType}" introuvable`);
+      throw new Error(`Template "${templateType}" introuvable`);
+    }
+
+    if (!template.is_active) {
+      console.warn(`⚠️  Template "${templateType}" est inactif`);
+      return false;
+    }
+
+    // Remplacer les variables dans le template
+    const htmlContent = replaceVariables(template.html_body, data);
+    const textContent = template.text_body ? replaceVariables(template.text_body, data) : null;
+
+    // Envoyer l'email
+    await sendEmail(recipientEmail, template.subject, htmlContent, textContent);
+
+    console.log(`✅ Email envoyé depuis le template "${templateType}" à ${recipientEmail}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Erreur lors de l\'envoi de l\'email depuis le template:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   generateVerificationCode,
   sendVerificationCode,
   sendPasswordResetCode,
   sendTransactionCreated,
   sendTransactionValidated,
-  sendTransactionRejected
+  sendTransactionRejected,
+  sendEmail,
+  sendEmailFromTemplate,
+  replaceVariables
 };
