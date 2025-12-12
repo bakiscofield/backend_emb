@@ -334,6 +334,13 @@ router.post('/:id/send', checkPermission('CREATE_NEWSLETTERS'), [
     // Envoyer les emails un par un (TODO: utiliser une queue pour beaucoup de destinataires)
     for (const recipient of recipients) {
       try {
+        // Vérifier que l'utilisateur a un email
+        if (!recipient.email) {
+          console.warn(`⚠️  Utilisateur ${recipient.name} (ID: ${recipient.id}) n'a pas d'email - ignoré`);
+          errorCount++;
+          continue;
+        }
+
         await sendNewsletter(recipient.email, recipient.name, newsletter);
 
         // Mettre à jour sent_at pour ce destinataire
@@ -343,26 +350,13 @@ router.post('/:id/send', checkPermission('CREATE_NEWSLETTERS'), [
             user_id: recipient.id
           },
           data: {
-            sent_at: new Date(),
-            status: 'sent'
+            sent_at: new Date()
           }
         });
 
         successCount++;
       } catch (error) {
-        console.error(`Erreur envoi à ${recipient.email}:`, error.message);
-
-        // Marquer comme échoué
-        await prisma.newsletter_recipients.updateMany({
-          where: {
-            newsletter_id: parseInt(id),
-            user_id: recipient.id
-          },
-          data: {
-            status: 'failed'
-          }
-        });
-
+        console.error(`❌ Erreur envoi à ${recipient.email || 'email manquant'}:`, error.message);
         errorCount++;
       }
     }
