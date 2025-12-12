@@ -299,7 +299,12 @@ router.post('/:id/send', checkPermission('CREATE_NEWSLETTERS'), [
       });
     }
 
-    // Insérer les destinataires dans newsletter_recipients
+    // Supprimer les anciens destinataires (permettre le renvoi)
+    await prisma.newsletter_recipients.deleteMany({
+      where: { newsletter_id: parseInt(id) }
+    });
+
+    // Insérer les nouveaux destinataires
     await prisma.newsletter_recipients.createMany({
       data: recipients.map(recipient => ({
         newsletter_id: parseInt(id),
