@@ -5,6 +5,7 @@ const prisma = require('../config/prisma');
 const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const { createNotification } = require('./notifications');
 const { sendTransactionCreated, sendTransactionValidated, sendTransactionRejected, sendEmailFromTemplate } = require('../utils/emailService');
+const { checkMonthlyLimit, getMonthlyLimitStats } = require('../utils/transactionLimits');
 
 const router = express.Router();
 
@@ -121,6 +122,21 @@ router.post('/create', authMiddleware, [
       return res.status(400).json({
         success: false,
         message: `Le montant maximum est de ${maxAmount.value} FCFA`
+      });
+    }
+
+    // Vérifier la limite mensuelle pour les utilisateurs sans KYC
+    const limitCheck = await checkMonthlyLimit(req.user.id, amount);
+    if (!limitCheck.allowed) {
+      return res.status(403).json({
+        success: false,
+        message: limitCheck.message,
+        error_code: 'MONTHLY_LIMIT_EXCEEDED',
+        details: {
+          current_total: limitCheck.currentTotal,
+          limit: limitCheck.limit,
+          requested_amount: amount
+        }
       });
     }
 
@@ -258,6 +274,34 @@ router.get('/check-reference/:reference', authMiddleware, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur serveur lors de la vérification de la référence'
+    });
+  }
+});
+
+// Obtenir les statistiques de limite mensuelle de l'utilisateur
+router.get('/monthly-limit', authMiddleware, async (req, res) => {
+  try {
+    const stats = await getMonthlyLimitStats(req.user.id);
+
+    const message = stats.hasKyc
+      ? `Vous avez utilisé ${stats.currentTotal} FCFA sur ${stats.limit} FCFA ce mois. Il vous reste ${stats.remaining} FCFA.`
+      : `Vous avez utilisé ${stats.currentTotal} FCFA sur ${stats.limit} FCFA ce mois. Il vous reste ${stats.remaining} FCFA. Validez votre KYC pour augmenter votre limite.`;
+
+    return res.json({
+      success: true,
+      data: {
+        current_total: stats.currentTotal,
+        limit: stats.limit,
+        remaining: stats.remaining,
+        has_kyc: stats.hasKyc,
+        message
+      }
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des statistiques de limite:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la récupération des statistiques'
     });
   }
 });
