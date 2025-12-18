@@ -176,8 +176,8 @@ router.post(
     body('reference_required').optional({ nullable: true }).isBoolean().withMessage('reference_required doit être un booléen'),
     body('reference_label').optional({ nullable: true, checkFalsy: true }),
     body('reference_placeholder').optional({ nullable: true, checkFalsy: true }),
-    body('validated_email_template_id').isInt({ min: 1 }).withMessage('Le template email de validation est requis'),
-    body('rejected_email_template_id').isInt({ min: 1 }).withMessage('Le template email de rejet est requis'),
+    body('validated_email_template_id').optional({ nullable: true }).isInt({ min: 1 }).withMessage('Le template email de validation doit être un entier valide'),
+    body('rejected_email_template_id').optional({ nullable: true }).isInt({ min: 1 }).withMessage('Le template email de rejet doit être un entier valide'),
     body('fields').optional().isArray().withMessage('Les champs doivent être un tableau')
   ],
   async (req, res) => {
