@@ -19,6 +19,7 @@ const chatRoutes = require('./routes/chat');
 const pushRoutes = require('./routes/push');
 const legalRoutes = require('./routes/legal');
 const emailTemplatesRoutes = require('./routes/email-templates');
+const { router: fcmRoutes } = require('./routes/fcm');
 
 // Initialiser la base de données
 const db = require('./config/database');
@@ -61,7 +62,8 @@ app.get('/', (req, res) => {
       chat: '/api/chat',
       push: '/api/push',
       legal: '/api/legal',
-      emailTemplates: '/api/email-templates'
+      emailTemplates: '/api/email-templates',
+      fcm: '/api/fcm'
     }
   });
 });
@@ -81,6 +83,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/legal', legalRoutes);
 app.use('/api/email-templates', emailTemplatesRoutes);
+app.use('/api/fcm', fcmRoutes);
 
 // Servir les fichiers statiques (uploads)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
