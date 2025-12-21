@@ -27,11 +27,13 @@ router.post('/save-token',
 
       // Vérifier si la table existe, sinon la créer
       try {
-        // Sauvegarder ou mettre à jour le token dans la base de données
+        // Sauvegarder ou mettre à jour le token dans la base de données (SQLite syntax)
         await prisma.$executeRaw`
           INSERT INTO user_fcm_tokens (user_id, fcm_token, created_at, updated_at)
-          VALUES (${userId}, ${fcmToken}, NOW(), NOW())
-          ON DUPLICATE KEY UPDATE fcm_token = ${fcmToken}, updated_at = NOW()
+          VALUES (${userId}, ${fcmToken}, datetime('now'), datetime('now'))
+          ON CONFLICT(user_id) DO UPDATE SET
+            fcm_token = ${fcmToken},
+            updated_at = datetime('now')
         `;
 
         console.log('[FCM] Token sauvegardé avec succès');
@@ -47,12 +49,11 @@ router.post('/save-token',
 
           await prisma.$executeRaw`
             CREATE TABLE IF NOT EXISTS user_fcm_tokens (
-              id INT PRIMARY KEY AUTO_INCREMENT,
-              user_id INT NOT NULL,
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              user_id INTEGER NOT NULL UNIQUE,
               fcm_token TEXT NOT NULL,
-              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-              UNIQUE KEY unique_user (user_id),
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
               FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
           `;
@@ -62,7 +63,7 @@ router.post('/save-token',
           // Réessayer la sauvegarde
           await prisma.$executeRaw`
             INSERT INTO user_fcm_tokens (user_id, fcm_token, created_at, updated_at)
-            VALUES (${userId}, ${fcmToken}, NOW(), NOW())
+            VALUES (${userId}, ${fcmToken}, datetime('now'), datetime('now'))
           `;
 
           res.json({
