@@ -31,3 +31,4 @@ dist/
 build/
 
 /generated/prisma
+config/firebase-service-account.json
