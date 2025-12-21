@@ -155,8 +155,7 @@ router.post('/test-notification',
       const message = {
         notification: {
           title: 'EMB - Notification de test',
-          body: 'Ceci est une notification de test Firebase Cloud Messaging ✅',
-          icon: '/icon-192x192.png'
+          body: 'Ceci est une notification de test Firebase Cloud Messaging ✅'
         },
         data: {
           url: '/dashboard',
@@ -229,8 +228,7 @@ async function sendNotificationToUser(userId, title, body, data = {}) {
     const message = {
       notification: {
         title: title,
-        body: body,
-        icon: '/icon-192x192.png'
+        body: body
       },
       data: {
         ...data,
@@ -280,8 +278,7 @@ async function notifyAllAdmins(title, body, data = {}) {
     const message = {
       notification: {
         title: title,
-        body: body,
-        icon: '/icon-192x192.png'
+        body: body
       },
       data: {
         ...data,
