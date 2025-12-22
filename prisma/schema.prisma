@@ -34,6 +34,7 @@ model admins {
   push_subscriptions  push_subscriptions[]
   transaction_history transaction_history[]
   transactions        transactions[]
+  promo_codes         promo_codes[]
 }
 
 model bookmakers {
@@ -321,8 +322,11 @@ model transactions {
   from_number         String?
   to_number           String?
   admin_message       String?
+  promo_code_used     String?
+  promo_discount      Float?                @default(0)
   notifications       notifications[]
   transaction_history transaction_history[]
+  promo_code_usage    promo_code_usage?
   admins              admins?               @relation(fields: [validated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   bookmakers          bookmakers?           @relation(fields: [bookmaker_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   users               users                 @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -352,4 +356,51 @@ model users {
   password_reset_tokens      password_reset_tokens[]
   push_subscriptions         push_subscriptions[]
   transactions               transactions[]
+  user_fcm_tokens            user_fcm_tokens[]
+  promo_codes                promo_codes[]
+  promo_code_usage           promo_code_usage[]
+}
+
+model user_fcm_tokens {
+  id         Int      @id @default(autoincrement())
+  user_id    Int      @unique
+  fcm_token  String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model promo_codes {
+  id                Int                 @id @default(autoincrement())
+  code              String              @unique
+  discount_percent  Float
+  valid_from        DateTime            @default(now())
+  valid_until       DateTime
+  user_id           Int?
+  max_uses          Int?
+  current_uses      Int                 @default(0)
+  is_active         Boolean             @default(true)
+  created_by        Int
+  created_at        DateTime            @default(now())
+  updated_at        DateTime            @updatedAt
+  users             users?              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  admins            admins              @relation(fields: [created_by], references: [id], onDelete: NoAction)
+  promo_code_usage  promo_code_usage[]
+
+  @@index([code])
+  @@index([user_id])
+}
+
+model promo_code_usage {
+  id             Int          @id @default(autoincrement())
+  promo_code_id  Int
+  user_id        Int
+  transaction_id Int          @unique
+  used_at        DateTime     @default(now())
+  promo_codes    promo_codes  @relation(fields: [promo_code_id], references: [id], onDelete: Cascade)
+  users          users        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  transactions   transactions @relation(fields: [transaction_id], references: [id], onDelete: Cascade)
+
+  @@index([promo_code_id])
+  @@index([user_id])
 }

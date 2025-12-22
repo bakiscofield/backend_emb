@@ -25,55 +25,22 @@ router.post('/save-token',
 
       console.log('[FCM] Sauvegarde token pour user:', userId);
 
-      // Vérifier si la table existe, sinon la créer
-      try {
-        // Sauvegarder ou mettre à jour le token dans la base de données (SQLite syntax)
-        await prisma.$executeRaw`
-          INSERT INTO user_fcm_tokens (user_id, fcm_token, created_at, updated_at)
-          VALUES (${userId}, ${fcmToken}, datetime('now'), datetime('now'))
-          ON CONFLICT(user_id) DO UPDATE SET
-            fcm_token = ${fcmToken},
-            updated_at = datetime('now')
-        `;
-
-        console.log('[FCM] Token sauvegardé avec succès');
-
-        res.json({
-          success: true,
-          message: 'Token FCM sauvegardé avec succès'
-        });
-      } catch (dbError) {
-        // Si la table n'existe pas, créer la structure
-        if (dbError.code === 'ER_NO_SUCH_TABLE' || dbError.message.includes('user_fcm_tokens')) {
-          console.log('[FCM] Table user_fcm_tokens non trouvée, création...');
-
-          await prisma.$executeRaw`
-            CREATE TABLE IF NOT EXISTS user_fcm_tokens (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              user_id INTEGER NOT NULL UNIQUE,
-              fcm_token TEXT NOT NULL,
-              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )
-          `;
-
-          console.log('[FCM] Table créée, nouvelle tentative de sauvegarde...');
-
-          // Réessayer la sauvegarde
-          await prisma.$executeRaw`
-            INSERT INTO user_fcm_tokens (user_id, fcm_token, created_at, updated_at)
-            VALUES (${userId}, ${fcmToken}, datetime('now'), datetime('now'))
-          `;
-
-          res.json({
-            success: true,
-            message: 'Token FCM sauvegardé avec succès (table créée)'
-          });
-        } else {
-          throw dbError;
+      // Utiliser Prisma ORM pour upsert (compatible avec toutes les DB)
+      await prisma.user_fcm_tokens.upsert({
+        where: { user_id: userId },
+        update: { fcm_token: fcmToken },
+        create: {
+          user_id: userId,
+          fcm_token: fcmToken
         }
-      }
+      });
+
+      console.log('[FCM] Token sauvegardé avec succès');
+
+      res.json({
+        success: true,
+        message: 'Token FCM sauvegardé avec succès'
+      });
     } catch (error) {
       console.error('[FCM] Erreur sauvegarde token:', error);
       res.status(500).json({
@@ -103,11 +70,13 @@ router.post('/delete-token',
 
       console.log('[FCM] Suppression token pour user:', userId);
 
-      // Supprimer le token de la base de données
-      await prisma.$executeRaw`
-        DELETE FROM user_fcm_tokens
-        WHERE user_id = ${userId} AND fcm_token = ${fcmToken}
-      `;
+      // Utiliser Prisma ORM pour supprimer
+      await prisma.user_fcm_tokens.deleteMany({
+        where: {
+          user_id: userId,
+          fcm_token: fcmToken
+        }
+      });
 
       console.log('[FCM] Token supprimé avec succès');
 
@@ -182,9 +151,9 @@ router.post('/test-notification',
             sendError.code === 'messaging/registration-token-not-registered') {
           // Token invalide, le supprimer de la base de données
           console.log('[FCM] Token invalide, suppression...');
-          await prisma.$executeRaw`
-            DELETE FROM user_fcm_tokens WHERE fcm_token = ${fcmToken}
-          `;
+          await prisma.user_fcm_tokens.deleteMany({
+            where: { fcm_token: fcmToken }
+          });
 
           return res.status(400).json({
             error: 'Token FCM invalide ou expiré',
@@ -213,17 +182,17 @@ router.post('/test-notification',
 // ==================== FONCTION UTILITAIRE: Envoyer notification à un utilisateur ====================
 async function sendNotificationToUser(userId, title, body, data = {}) {
   try {
-    // Récupérer le token FCM de l'utilisateur
-    const tokens = await prisma.$queryRaw`
-      SELECT fcm_token FROM user_fcm_tokens WHERE user_id = ${userId}
-    `;
+    // Récupérer le token FCM de l'utilisateur avec Prisma ORM
+    const tokenRecord = await prisma.user_fcm_tokens.findUnique({
+      where: { user_id: userId }
+    });
 
-    if (tokens.length === 0) {
+    if (!tokenRecord) {
       console.log('[FCM] Utilisateur sans token FCM:', userId);
       return null;
     }
 
-    const fcmToken = tokens[0].fcm_token;
+    const fcmToken = tokenRecord.fcm_token;
 
     // Préparer le message
     const message = {
@@ -249,9 +218,9 @@ async function sendNotificationToUser(userId, title, body, data = {}) {
     // Si le token est invalide, le supprimer
     if (error.code === 'messaging/invalid-registration-token' ||
         error.code === 'messaging/registration-token-not-registered') {
-      await prisma.$executeRaw`
-        DELETE FROM user_fcm_tokens WHERE user_id = ${userId}
-      `;
+      await prisma.user_fcm_tokens.delete({
+        where: { user_id: userId }
+      }).catch(() => {}); // Ignorer si déjà supprimé
       console.log('[FCM] Token invalide supprimé pour user:', userId);
     }
 
@@ -262,18 +231,21 @@ async function sendNotificationToUser(userId, title, body, data = {}) {
 // ==================== FONCTION UTILITAIRE: Notifier tous les admins ====================
 async function notifyAllAdmins(title, body, data = {}) {
   try {
-    // Récupérer tous les tokens FCM des admins
-    const admins = await prisma.$queryRaw`
-      SELECT uft.fcm_token
-      FROM user_fcm_tokens uft
-      JOIN users u ON uft.user_id = u.id
-      WHERE u.role = 'admin'
-    `;
+    // Récupérer tous les tokens FCM des admins avec Prisma ORM
+    // Note: Les admins sont dans la table "admins", pas "users"
+    // Pour l'instant, on notifie tous les utilisateurs ayant un token
+    const tokenRecords = await prisma.user_fcm_tokens.findMany({
+      include: {
+        users: true
+      }
+    });
 
-    if (admins.length === 0) {
-      console.log('[FCM] Aucun admin avec token FCM');
+    if (tokenRecords.length === 0) {
+      console.log('[FCM] Aucun utilisateur avec token FCM');
       return null;
     }
+
+    const admins = tokenRecords;
 
     // Préparer le message
     const message = {
