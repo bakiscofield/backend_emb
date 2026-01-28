@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const prisma = require('../config/prisma');
 const { adminMiddleware, checkPermission } = require('../middleware/auth');
+const { sendAdminCredentials, generateRandomPassword } = require('../utils/emailService');
 
 const router = express.Router();
 
@@ -69,8 +70,7 @@ router.post('/login', [
 // Créer un admin (protégé - nécessite d'être admin)
 router.post('/create', adminMiddleware, [
   body('username').trim().notEmpty().withMessage('Le nom d\'utilisateur est requis'),
-  body('password').isLength({ min: 8 }).withMessage('Le mot de passe doit contenir au moins 8 caractères'),
-  body('email').optional().isEmail().withMessage('Email invalide')
+  body('email').notEmpty().withMessage('L\'email est requis').isEmail().withMessage('Email invalide')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -78,7 +78,7 @@ router.post('/create', adminMiddleware, [
       return res.status(400).json({ success: false, errors: errors.array() });
     }
 
-    const { username, password, email } = req.body;
+    const { username, email } = req.body;
 
     // Vérifier si l'admin existe déjà
     const existingAdmin = await prisma.admins.findUnique({
@@ -91,28 +91,51 @@ router.post('/create', adminMiddleware, [
       });
     }
 
+    // Vérifier si l'email existe déjà
+    const existingEmail = await prisma.admins.findFirst({
+      where: { email }
+    });
+    if (existingEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cet email est déjà utilisé'
+      });
+    }
+
+    // Générer un mot de passe aléatoire sécurisé
+    const generatedPassword = generateRandomPassword(12);
+
     // Hasher le mot de passe
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(generatedPassword, 10);
 
     // Insérer l'admin
     const newAdmin = await prisma.admins.create({
       data: {
         username,
         password: hashedPassword,
-        email: email || null
+        email
       }
     });
 
+    // Envoyer l'email avec les identifiants
+    try {
+      await sendAdminCredentials(email, username, generatedPassword);
+      console.log(`✅ Identifiants envoyés à ${email}`);
+    } catch (emailError) {
+      console.error('❌ Erreur lors de l\'envoi de l\'email:', emailError);
+      // On continue même si l'email échoue, mais on prévient l'utilisateur
+    }
+
     res.status(201).json({
       success: true,
-      message: 'Administrateur créé avec succès',
+      message: 'Administrateur créé avec succès. Les identifiants ont été envoyés par email.',
       admin: { id: newAdmin.id, username, email }
     });
   } catch (error) {
     console.error('Erreur lors de la création de l\'admin:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Erreur serveur lors de la création' 
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la création'
     });
   }
 });

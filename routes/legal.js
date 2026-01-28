@@ -2,263 +2,207 @@ const express = require('express');
 const router = express.Router();
 
 // Version actuelle des documents
-const CURRENT_VERSION = '1.0';
+const CURRENT_VERSION = '2.0';
 
 // Contenu des CGU (Conditions Générales d'Utilisation)
 const getCGU = () => ({
   version: CURRENT_VERSION,
-  lastUpdated: '2024-11-27',
-  title: 'Conditions Générales d\'Utilisation - EMB Transfer',
+  lastUpdated: '2025-01-03',
+  title: 'Conditions Générales d\'Utilisation - Emile Transfer+',
   content: `
-# Conditions Générales d'Utilisation
-
-**Date de dernière mise à jour : 27 novembre 2024**
+# CONDITIONS GÉNÉRALES D'UTILISATION (CGU)
+## Emile Transfer+
+**Dernière mise à jour : 2025**
 
 ## 1. Présentation du service
 
-EMB Transfer est une plateforme d'échange de moyens de paiement mobile permettant aux utilisateurs d'effectuer des transactions entre différents opérateurs de téléphonie mobile au Togo.
+Emile Transfer+ est une plateforme de services financiers permettant aux utilisateurs d'effectuer des échanges et transferts entre des services de Mobile Money (notamment TMoney, Flooz) et certaines applications ou services bancaires partenaires (tels que Coris Money, Orabank, Ecobank, Gozem Money), selon la disponibilité.
 
-## 2. Acceptation des conditions
+La plateforme est accessible via :
+- Un site vitrine présentant les services ;
+- Un site/app de connexion dédié aux opérations pour les utilisateurs souhaitant utiliser le web.
 
-En utilisant EMB Transfer, vous acceptez sans réserve les présentes Conditions Générales d'Utilisation. Si vous n'acceptez pas ces conditions, veuillez ne pas utiliser notre service.
+## 2. Acceptation des Conditions
 
-## 3. Création de compte
+L'utilisation des services d'Emile Transfer+ implique l'acceptation pleine et entière des présentes Conditions Générales d'Utilisation (CGU). En cas de désaccord, l'utilisateur doit cesser immédiatement toute utilisation du service.
 
-### 3.1 Éligibilité
-Pour créer un compte, vous devez :
-- Avoir au moins 18 ans
-- Fournir des informations exactes et à jour
-- Disposer d'un numéro de téléphone mobile valide
-- Fournir une adresse email valide
+## 3. Éligibilité
 
-### 3.2 Sécurité du compte
-Vous êtes responsable de :
-- La confidentialité de votre mot de passe
-- Toutes les activités effectuées sous votre compte
-- Informer immédiatement EMB Transfer en cas d'utilisation non autorisée
+L'utilisateur déclare :
+- Être âgé d'au moins 18 ans ;
+- Disposer de la capacité juridique nécessaire ;
+- Utiliser les services conformément aux lois et réglementations en vigueur au Togo.
 
-## 4. Utilisation du service
+## 4. Création de compte
 
-### 4.1 Services proposés
-EMB Transfer permet :
-- L'échange de crédit entre opérateurs mobiles (Tmoney, Flooz, etc.)
-- Le suivi de vos transactions
-- La gestion de votre compte
+Pour accéder aux services, l'utilisateur doit créer un compte en fournissant des informations exactes, complètes et à jour. Emile Transfer+ se réserve le droit de refuser ou suspendre tout compte en cas d'informations inexactes ou frauduleuses.
 
-### 4.2 Obligations de l'utilisateur
-Vous vous engagez à :
-- Ne pas utiliser le service à des fins illégales
-- Fournir des informations exactes lors des transactions
-- Respecter les limites de montants fixées
-- Ne pas tenter de contourner les mesures de sécurité
+## 5. KYC (Know Your Customer)
 
-### 4.3 Transactions
-- Toutes les transactions sont soumises à validation par nos équipes
-- Les délais de traitement peuvent varier selon le volume de demandes
-- EMB Transfer se réserve le droit de refuser toute transaction suspecte
-- Les frais de commission sont clairement affichés avant validation
+Dans le cadre de la lutte contre la fraude et le blanchiment d'argent :
+- Un KYC est obligatoire pour les opérations bancaires ;
+- Le KYC avec reconnaissance faciale est requis pour certaines opérations
 
-## 5. Frais et paiements
+Emile Transfer+ peut demander des documents supplémentaires à tout moment.
 
-### 5.1 Commission
-- Une commission est appliquée sur chaque transaction
-- Le montant exact est affiché avant confirmation
-- Les frais sont non remboursables une fois la transaction validée
+## 6. Services proposés
 
-### 5.2 Taxes
-- Des taxes peuvent s'appliquer selon la réglementation en vigueur
-- L'utilisateur est informé du montant total avant confirmation
+Emile Transfer+ propose notamment :
+- Échanges entre Mobile Money (TMoney, Flooz) ;
+- Transferts vers des services bancaires partenaires ;
+- Vente de cartes bancaires prépayées (virtuelles ou physiques selon disponibilité) ;
+- Opérations de préenregistrement des envois et retraits via les services de transfert internationaux tels que Western Union, RIA et MoneyGram ;
+- Autres services financiers connexes selon disponibilité.
 
-## 6. Responsabilités
+Les services peuvent évoluer à tout moment.
 
-### 6.1 Responsabilité d'EMB Transfer
-EMB Transfer s'engage à :
-- Traiter les transactions dans les meilleurs délais
-- Protéger vos données personnelles
-- Maintenir la sécurité de la plateforme
+## 7. Frais et commissions
 
-### 6.2 Limitations de responsabilité
-EMB Transfer ne peut être tenu responsable :
-- Des retards dus aux opérateurs téléphoniques
-- Des erreurs résultant d'informations incorrectes fournies par l'utilisateur
-- Des interruptions de service indépendantes de notre volonté
+Les frais applicables sont communiqués à l'utilisateur avant la validation de chaque opération. Emile Transfer+ se réserve le droit de modifier ses tarifs à tout moment.
 
-## 7. Protection des données
+## 8. Obligations de l'utilisateur
 
-Vos données personnelles sont traitées conformément à notre Politique de Confidentialité.
+L'utilisateur s'engage à :
+- Fournir des informations véridiques ;
+- Ne pas utiliser le service à des fins illégales ;
+- Sécuriser ses identifiants de connexion ;
+- Signaler immédiatement toute activité suspecte.
 
-## 8. Modification des CGU
+## 9. Responsabilités
 
-EMB Transfer se réserve le droit de modifier ces CGU à tout moment. Les utilisateurs seront informés des modifications importantes par email.
+Emile Transfer+ agit en tant qu'intermédiaire technique et ne conserve pas durablement les fonds des utilisateurs au-delà du temps nécessaire à l'exécution des opérations.
 
-## 9. Résiliation
+Emile Transfer+ ne saurait être tenue responsable :
+- Des retards dus aux opérateurs partenaires ;
+- Des interruptions de service indépendantes de sa volonté ;
+- D'une mauvaise utilisation du service par l'utilisateur.
 
-### 9.1 Par l'utilisateur
-Vous pouvez fermer votre compte à tout moment en nous contactant.
+## 10. Suspension et résiliation
 
-### 9.2 Par EMB Transfer
-Nous pouvons suspendre ou fermer votre compte en cas de :
-- Violation des présentes CGU
-- Activité suspecte ou frauduleuse
-- Non-respect des réglementations en vigueur
+Emile Transfer+ se réserve le droit de suspendre ou résilier un compte sans préavis en cas de :
+- Violation des présentes CGU ;
+- Activité frauduleuse ou suspecte ;
+- Demande des autorités compétentes.
 
-## 10. Droit applicable
+## 11. Protection des données
 
-Les présentes CGU sont régies par le droit togolais. Tout litige sera soumis aux tribunaux compétents de Lomé, Togo.
+Les données personnelles sont traitées conformément à la réglementation en vigueur. Elles sont utilisées uniquement dans le cadre des services proposés et des obligations légales.
 
-## 11. Contact
+## 12. Propriété intellectuelle
 
-Pour toute question concernant ces CGU :
-- Email : support@embtransfer.com
-- Téléphone : [Votre numéro de support]
+Tous les contenus (logos, textes, designs, marques) d'Emile Transfer+ sont protégés et restent la propriété exclusive d'Emile Transfer+.
+
+## 13. Modification des CGU
+
+Emile Transfer+ se réserve le droit de modifier les présentes CGU à tout moment. Les utilisateurs seront informés des mises à jour importantes.
+
+## 14. Droit applicable et juridiction
+
+Les présentes CGU sont régies par le droit togolais. En cas de litige, une solution amiable sera recherchée avant toute action judiciaire.
+
+## 15. Contact
+
+Pour toute question ou réclamation, l'utilisateur peut contacter le service client d'Emile Transfer+ via les canaux officiels indiqués sur la plateforme.
 
 ---
 
-**En utilisant EMB Transfer, vous reconnaissez avoir lu, compris et accepté les présentes Conditions Générales d'Utilisation.**
+**Emile Transfer+, la solution moderne pour échanger, payer et transférer sans complication.**
   `.trim()
 });
 
 // Contenu de la Politique de Confidentialité
 const getPrivacyPolicy = () => ({
   version: CURRENT_VERSION,
-  lastUpdated: '2024-11-27',
-  title: 'Politique de Confidentialité - EMB Transfer',
+  lastUpdated: '2025-01-03',
+  title: 'Politique de Confidentialité - Emile Transfer+',
   content: `
-# Politique de Confidentialité
-
-**Date de dernière mise à jour : 27 novembre 2024**
+# POLITIQUE DE CONFIDENTIALITÉ
+## Emile Transfer+
+**Dernière mise à jour : 2025**
 
 ## 1. Introduction
 
-EMB Transfer ("nous", "notre", "nos") s'engage à protéger votre vie privée. Cette Politique de Confidentialité explique comment nous collectons, utilisons et protégeons vos informations personnelles.
+La présente Politique de Confidentialité a pour objectif d'informer les utilisateurs de la plateforme Emile Transfer+ sur la manière dont leurs données personnelles sont collectées, utilisées, protégées et partagées.
 
-## 2. Informations collectées
+Emile Transfer+ accorde une importance particulière à la protection de la vie privée et s'engage à traiter les données personnelles de manière transparente, sécurisée et conforme aux lois et réglementations en vigueur.
 
-### 2.1 Informations que vous nous fournissez
-- **Informations de compte** : Nom, numéro de téléphone, email, mot de passe
-- **Informations de transaction** : Montants, numéros de téléphone source et destination, références de paiement
-- **Documents KYC** : Pièces d'identité pour la vérification (si applicable)
+## 2. Données personnelles collectées
 
-### 2.2 Informations collectées automatiquement
-- **Données techniques** : Adresse IP, type d'appareil, navigateur
-- **Données d'utilisation** : Historique des transactions, préférences
-- **Cookies** : Pour améliorer votre expérience utilisateur
+Dans le cadre de l'utilisation de ses services, Emile Transfer+ peut collecter les données suivantes :
 
-## 3. Utilisation des données
+- **Informations d'identification** : nom, prénom, numéro de téléphone, adresse e-mail ;
+- **Informations d'identité dans le cadre du KYC** : pièce d'identité officielle, photo, reconnaissance faciale ;
+- **Informations de transaction** : montants, dates, type d'opération, services utilisés ;
+- **Données techniques** : adresse IP, type d'appareil, système d'exploitation, navigateur.
 
-Nous utilisons vos données pour :
+## 3. Méthodes de collecte
 
-### 3.1 Fourniture du service
-- Traiter vos transactions
-- Gérer votre compte
-- Vous envoyer des notifications importantes
-- Assurer la sécurité de la plateforme
+Les données personnelles sont collectées notamment lors :
 
-### 3.2 Communication
-- Vous envoyer des confirmations de transaction
-- Vous informer des mises à jour du service
-- Répondre à vos demandes de support
-- Vous envoyer des newsletters (avec votre consentement)
+- De la création d'un compte utilisateur ;
+- De l'utilisation des services et de la réalisation d'opérations ;
+- Des procédures de vérification d'identité (KYC) ;
+- De la navigation sur le site web ou l'application.
 
-### 3.3 Amélioration du service
-- Analyser l'utilisation de la plateforme
-- Développer de nouvelles fonctionnalités
-- Résoudre les problèmes techniques
+## 4. Utilisation des données
 
-### 3.4 Conformité légale
-- Respecter nos obligations légales
-- Prévenir la fraude et les activités illégales
-- Répondre aux demandes des autorités compétentes
+Les données collectées sont utilisées pour :
 
-## 4. Partage des données
+- Fournir, gérer et sécuriser les services proposés ;
+- Vérifier l'identité des utilisateurs ;
+- Prévenir la fraude, le blanchiment d'argent et les activités illégales ;
+- Respecter les obligations légales et réglementaires ;
+- Améliorer la qualité des services et l'expérience utilisateur.
 
-### 4.1 Nous ne vendons jamais vos données personnelles
+## 5. Partage des données
 
-### 4.2 Partage limité avec :
-- **Opérateurs mobiles** : Pour effectuer les transactions
-- **Prestataires de services** : Pour l'hébergement, l'email, etc. (sous contrat strict)
-- **Autorités légales** : Si requis par la loi
+Les données personnelles peuvent être partagées uniquement avec :
 
-### 4.3 Données anonymisées
-Nous pouvons partager des statistiques anonymisées à des fins d'analyse.
+- Les partenaires techniques, financiers ou prestataires nécessaires à l'exécution des services (Mobile Money, banques, services de transfert) ;
+- Les autorités compétentes, lorsque la loi l'exige ou sur réquisition légale.
 
-## 5. Sécurité des données
+Emile Transfer+ ne vend, ne loue et ne commercialise jamais les données personnelles des utilisateurs.
 
-### 5.1 Mesures de sécurité
-- Chiffrement des données sensibles
-- Authentification sécurisée
-- Surveillance continue de la sécurité
-- Accès restreint aux données personnelles
+## 6. Conservation des données
 
-### 5.2 Conservation des données
-- Vos données de compte sont conservées tant que votre compte est actif
-- Les données de transaction sont conservées 5 ans pour des raisons légales
-- Vous pouvez demander la suppression de vos données à tout moment
+Les données personnelles sont conservées pendant la durée strictement nécessaire aux finalités pour lesquelles elles ont été collectées, conformément aux obligations légales et réglementaires en vigueur.
 
-## 6. Vos droits
+## 7. Sécurité des données
 
-Conformément à la réglementation sur la protection des données, vous avez le droit de :
+Emile Transfer+ met en place des mesures techniques et organisationnelles appropriées afin de protéger les données personnelles contre :
 
-### 6.1 Accès
-Demander une copie de vos données personnelles
+- L'accès non autorisé ;
+- La perte ;
+- L'altération ;
+- La divulgation frauduleuse.
 
-### 6.2 Rectification
-Corriger les informations inexactes
+## 8. Droits des utilisateurs
 
-### 6.3 Suppression
-Demander la suppression de vos données (sous certaines conditions)
+Conformément à la réglementation applicable, chaque utilisateur dispose des droits suivants :
 
-### 6.4 Portabilité
-Recevoir vos données dans un format structuré
+- Droit d'accès à ses données personnelles ;
+- Droit de rectification des données inexactes ou incomplètes ;
+- Droit de suppression, sous réserve des obligations légales ;
+- Droit d'opposition au traitement de ses données.
 
-### 6.5 Opposition
-Vous opposer au traitement de vos données à des fins marketing
+Les demandes relatives à ces droits peuvent être adressées via les canaux officiels d'Emile Transfer+.
 
-### 6.6 Retrait du consentement
-Retirer votre consentement à tout moment
+## 9. Cookies
 
-## 7. Cookies
+Le site web d'Emile Transfer+ peut utiliser des cookies afin d'améliorer la navigation et les performances du service.
+L'utilisateur peut configurer son navigateur pour refuser ou limiter l'utilisation des cookies.
 
-### 7.1 Utilisation
-Nous utilisons des cookies pour :
-- Maintenir votre session
-- Mémoriser vos préférences
-- Analyser l'utilisation du site
+## 10. Modification de la politique
 
-### 7.2 Gestion
-Vous pouvez gérer les cookies via les paramètres de votre navigateur.
+Emile Transfer+ se réserve le droit de modifier la présente Politique de Confidentialité à tout moment. Toute modification importante sera portée à la connaissance des utilisateurs.
 
-## 8. Transferts internationaux
+## 11. Contact
 
-Vos données sont principalement stockées au Togo. Si un transfert international est nécessaire, nous nous assurons que des garanties appropriées sont en place.
-
-## 9. Mineurs
-
-Notre service n'est pas destiné aux personnes de moins de 18 ans. Nous ne collectons pas sciemment de données auprès de mineurs.
-
-## 10. Modifications
-
-Nous pouvons mettre à jour cette Politique de Confidentialité. Les changements importants vous seront notifiés par email.
-
-## 11. Contact et réclamations
-
-### 11.1 Pour exercer vos droits
-Email : privacy@embtransfer.com
-
-### 11.2 Réclamations
-Si vous estimez que vos droits n'ont pas été respectés, vous pouvez déposer une réclamation auprès de l'autorité de protection des données compétente au Togo.
-
-## 12. Base légale du traitement
-
-Nous traitons vos données sur la base de :
-- Votre consentement
-- L'exécution du contrat (CGU)
-- Nos obligations légales
-- Notre intérêt légitime à améliorer nos services
+Pour toute question relative à la protection des données personnelles, l'utilisateur peut contacter Emile Transfer+ via les canaux de contact officiels disponibles sur la plateforme.
 
 ---
 
-**En utilisant EMB Transfer, vous reconnaissez avoir lu et compris cette Politique de Confidentialité.**
+**Emile Transfer+, la solution moderne pour échanger, payer et transférer sans complication.**
   `.trim()
 });
 
@@ -303,11 +247,11 @@ router.get('/version', (req, res) => {
       documents: {
         cgu: {
           version: CURRENT_VERSION,
-          lastUpdated: '2024-11-27'
+          lastUpdated: '2025-01-03'
         },
         privacyPolicy: {
           version: CURRENT_VERSION,
-          lastUpdated: '2024-11-27'
+          lastUpdated: '2025-01-03'
         }
       }
     });

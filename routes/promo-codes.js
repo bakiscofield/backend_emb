@@ -164,6 +164,66 @@ router.delete('/:id',
   }
 );
 
+// ==================== USER: Récupérer mes codes promo ====================
+router.get('/my-codes',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const userId = req.user.id;
+      const now = new Date();
+
+      // Récupérer tous les codes promo actifs pour cet utilisateur
+      const promoCodes = await prisma.promo_codes.findMany({
+        where: {
+          is_active: true,
+          valid_from: {
+            lte: now
+          },
+          valid_until: {
+            gte: now
+          },
+          OR: [
+            { user_id: null }, // Codes pour tous
+            { user_id: userId } // Codes pour cet utilisateur spécifiquement
+          ]
+        },
+        select: {
+          id: true,
+          code: true,
+          discount_percent: true,
+          valid_until: true
+        },
+        orderBy: {
+          created_at: 'desc'
+        }
+      });
+
+      // Filtrer les codes déjà utilisés par cet utilisateur
+      const unusedCodes = [];
+      for (const promo of promoCodes) {
+        const usage = await prisma.promo_code_usage.findFirst({
+          where: {
+            promo_code_id: promo.id,
+            user_id: userId
+          }
+        });
+
+        if (!usage) {
+          unusedCodes.push(promo);
+        }
+      }
+
+      res.json({
+        success: true,
+        promo_codes: unusedCodes
+      });
+    } catch (error) {
+      console.error('Erreur récupération codes promo utilisateur:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  }
+);
+
 // ==================== USER: Valider un code promo ====================
 router.post('/validate',
   authMiddleware,

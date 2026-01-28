@@ -36,7 +36,8 @@ router.post('/create', authMiddleware, [
       to_number,
       tmoney_number,
       flooz_number,
-      dynamic_fields
+      dynamic_fields,
+      promo_code
     } = req.body;
 
     let percentage = 0;
@@ -101,7 +102,81 @@ router.post('/create', authMiddleware, [
 
     // Calculer le montant total avec commission et taxe
     const commissionAmount = (amount * percentage) / 100;
-    const totalAmount = amount + commissionAmount + taxAmount;
+    let totalAmount = amount + commissionAmount + taxAmount;
+    let promoCodeData = null;
+    let discountAmount = 0;
+
+    // Valider et appliquer le code promo s'il est fourni
+    if (promo_code && promo_code.trim()) {
+      const promoCode = await prisma.promo_codes.findUnique({
+        where: { code: promo_code.toUpperCase() }
+      });
+
+      if (!promoCode) {
+        return res.status(400).json({
+          success: false,
+          message: 'Code promo invalide'
+        });
+      }
+
+      if (!promoCode.is_active) {
+        return res.status(400).json({
+          success: false,
+          message: 'Code promo désactivé'
+        });
+      }
+
+      const now = new Date();
+      if (now < promoCode.valid_from) {
+        return res.status(400).json({
+          success: false,
+          message: 'Code promo pas encore valide'
+        });
+      }
+
+      if (now > promoCode.valid_until) {
+        return res.status(400).json({
+          success: false,
+          message: 'Code promo expiré'
+        });
+      }
+
+      // Vérifier si le code est pour un utilisateur spécifique
+      if (promoCode.user_id && promoCode.user_id !== req.user.id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Code promo non valide pour votre compte'
+        });
+      }
+
+      // Vérifier le nombre max d'utilisations
+      if (promoCode.max_uses && promoCode.current_uses >= promoCode.max_uses) {
+        return res.status(400).json({
+          success: false,
+          message: 'Code promo épuisé'
+        });
+      }
+
+      // Vérifier si l'utilisateur a déjà utilisé ce code
+      const existingUsage = await prisma.promo_code_usage.findFirst({
+        where: {
+          promo_code_id: promoCode.id,
+          user_id: req.user.id
+        }
+      });
+
+      if (existingUsage) {
+        return res.status(400).json({
+          success: false,
+          message: 'Vous avez déjà utilisé ce code promo'
+        });
+      }
+
+      // Appliquer la réduction au montant total
+      discountAmount = (totalAmount * promoCode.discount_percent) / 100;
+      totalAmount = totalAmount - discountAmount;
+      promoCodeData = promoCode;
+    }
 
     // Vérifier les limites
     const minAmount = await prisma.config.findUnique({
@@ -164,6 +239,27 @@ router.post('/create', authMiddleware, [
         status: 'pending'
       }
     });
+
+    // Enregistrer l'utilisation du code promo si un code a été appliqué
+    if (promoCodeData) {
+      await prisma.promo_code_usage.create({
+        data: {
+          promo_code_id: promoCodeData.id,
+          user_id: req.user.id,
+          transaction_id: result.id
+        }
+      });
+
+      // Incrémenter le compteur d'utilisations du code promo
+      await prisma.promo_codes.update({
+        where: { id: promoCodeData.id },
+        data: {
+          current_uses: {
+            increment: 1
+          }
+        }
+      });
+    }
 
     // Ajouter à l'historique
     await prisma.transaction_history.create({
@@ -581,6 +677,7 @@ router.put('/:id/validate', adminMiddleware, [
     // Récupérer les informations des moyens de paiement pour le message
     let fromMethodName = 'Source';
     let toMethodName = 'Destination';
+    const category = transaction.exchange_pairs?.category;
 
     if (transaction.exchange_pairs) {
       fromMethodName = transaction.exchange_pairs.payment_methods_exchange_pairs_from_method_idTopayment_methods?.name || fromMethodName;
@@ -595,6 +692,10 @@ router.put('/:id/validate', adminMiddleware, [
       if (isSubscription && admin_message) {
         // Pour les abonnements: afficher le message de l'admin
         notificationMessage = admin_message;
+      } else if (category === 'money_transfer' || category === 'card_order') {
+        // Pour les transferts d'argent et commandes de carte: afficher seulement la destination
+        const finalAmount = transaction.amount;
+        notificationMessage = `Votre demande ${toMethodName} a été validée avec succès ! Montant: ${finalAmount} FCFA.`;
       } else {
         // Pour les échanges d'argent: message détaillé
         const finalAmount = transaction.amount; // Montant que le correspondant recevra
@@ -640,12 +741,15 @@ router.put('/:id/validate', adminMiddleware, [
 
         if (emailTemplate) {
           // Préparer les variables pour le template
+          // Pour money_transfer et card_order, ne pas afficher from_method
+          const showFromMethod = category !== 'money_transfer' && category !== 'card_order';
+
           const templateVariables = {
             user_name: user.name || 'Client',
             transaction_id: transaction.transaction_id,
             amount: transaction.amount.toString(),
-            from_method: emailData.fromMethod || transaction.from_number || transaction.tmoney_number,
-            to_method: emailData.toMethod || transaction.to_number || transaction.flooz_number,
+            from_method: showFromMethod ? (emailData.fromMethod || transaction.from_number || transaction.tmoney_number) : '',
+            to_method: emailData.toMethod || toMethodName || transaction.to_number || transaction.flooz_number,
             rejection_reason: comment || '',
             admin_message: admin_message || ''
           };

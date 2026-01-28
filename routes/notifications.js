@@ -80,6 +80,38 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
+// GET - Récupérer uniquement les notifications non lues
+router.get('/unread', authMiddleware, async (req, res) => {
+  try {
+    const { isAdmin, id } = req.user;
+
+    const notifications = await prisma.notifications.findMany({
+      where: isAdmin
+        ? {
+            OR: [
+              { admin_id: id },
+              { admin_id: null }
+            ],
+            is_read: false
+          }
+        : {
+            user_id: id,
+            is_read: false
+          },
+      orderBy: { created_at: 'desc' },
+      take: 10 // Limiter à 10 notifications non lues
+    });
+
+    res.json(notifications);
+  } catch (error) {
+    console.error('Erreur lors de la récupération des notifications non lues:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur'
+    });
+  }
+});
+
 // GET - Récupérer le nombre de notifications non lues
 router.get('/unread-count', authMiddleware, async (req, res) => {
   try {
@@ -115,8 +147,8 @@ router.get('/unread-count', authMiddleware, async (req, res) => {
   }
 });
 
-// PATCH - Marquer une notification comme lue
-router.patch('/:id/read', authMiddleware, async (req, res) => {
+// Fonction réutilisable pour marquer comme lu
+const markNotificationAsRead = async (req, res) => {
   try {
     const { id } = req.params;
     const { isAdmin, id: userId } = req.user;
@@ -164,7 +196,11 @@ router.patch('/:id/read', authMiddleware, async (req, res) => {
       message: 'Erreur serveur'
     });
   }
-});
+};
+
+// PATCH/POST - Marquer une notification comme lue
+router.patch('/:id/read', authMiddleware, markNotificationAsRead);
+router.post('/:id/read', authMiddleware, markNotificationAsRead);
 
 // PATCH - Marquer toutes les notifications comme lues
 router.patch('/read-all', authMiddleware, async (req, res) => {

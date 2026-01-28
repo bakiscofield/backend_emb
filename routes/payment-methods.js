@@ -1,9 +1,49 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 const prisma = require('../config/prisma');
 const { body, validationResult } = require('express-validator');
 const { authMiddleware } = require('../middleware/auth');
+
+// Configuration de multer pour l'upload des logos
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, '../uploads/logos');
+    // Créer le dossier s'il n'existe pas
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    // Générer un nom unique : timestamp + nom original
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, 'logo-' + uniqueSuffix + ext);
+  }
+});
+
+// Filtre pour accepter uniquement les images
+const fileFilter = (req, file, cb) => {
+  const allowedTypes = /jpeg|jpg|png|gif|svg|webp/;
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = allowedTypes.test(file.mimetype);
+
+  if (mimetype && extname) {
+    return cb(null, true);
+  } else {
+    cb(new Error('Seules les images sont autorisées (jpeg, jpg, png, gif, svg, webp)'));
+  }
+};
+
+const upload = multer({
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 } // Limite de 5MB
+});
 
 // Middleware pour vérifier si l'utilisateur est admin
 const adminMiddleware = (req, res, next) => {
@@ -72,6 +112,37 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// POST - Upload d'un logo (ADMIN)
+router.post('/upload-logo', authMiddleware, adminMiddleware, upload.single('logo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Aucun fichier uploadé'
+      });
+    }
+
+    // Générer l'URL du logo
+    const logoUrl = `/uploads/logos/${req.file.filename}`;
+
+    res.json({
+      success: true,
+      message: 'Logo uploadé avec succès',
+      data: {
+        filename: req.file.filename,
+        url: logoUrl,
+        path: req.file.path
+      }
+    });
+  } catch (error) {
+    console.error('Erreur lors de l\'upload du logo:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Erreur serveur lors de l\'upload'
+    });
+  }
+});
+
 // POST - Créer un nouveau moyen de paiement (ADMIN)
 router.post(
   '/',
@@ -86,6 +157,7 @@ router.post(
       .isUppercase()
       .withMessage('Le code doit être en majuscules'),
     body('icon').optional().trim(),
+    body('logo_url').optional().trim().isURL().withMessage('L\'URL du logo doit être valide'),
     body('description').optional().trim()
   ],
   async (req, res) => {
@@ -99,7 +171,7 @@ router.post(
     }
 
     try {
-      const { name, code, icon, description } = req.body;
+      const { name, code, icon, logo_url, description } = req.body;
 
       // Vérifier si le code existe déjà
       const existing = await prisma.payment_methods.findUnique({
@@ -118,6 +190,7 @@ router.post(
           name,
           code,
           icon: icon || null,
+          logo_url: logo_url || null,
           description: description || null,
           is_active: true
         }
@@ -147,6 +220,7 @@ router.put(
     body('name').optional().trim().notEmpty(),
     body('code').optional().trim().notEmpty().isUppercase(),
     body('icon').optional().trim(),
+    body('logo_url').optional().trim(),
     body('description').optional().trim(),
     body('is_active').optional().isBoolean()
   ],
@@ -162,7 +236,7 @@ router.put(
 
     try {
       const { id } = req.params;
-      const { name, code, icon, description, is_active } = req.body;
+      const { name, code, icon, logo_url, description, is_active } = req.body;
 
       // Vérifier si le moyen de paiement existe
       const existing = await prisma.payment_methods.findUnique({
@@ -196,6 +270,7 @@ router.put(
       if (name !== undefined) updateData.name = name;
       if (code !== undefined) updateData.code = code;
       if (icon !== undefined) updateData.icon = icon;
+      if (logo_url !== undefined) updateData.logo_url = logo_url;
       if (description !== undefined) updateData.description = description;
       if (is_active !== undefined) updateData.is_active = is_active;
 

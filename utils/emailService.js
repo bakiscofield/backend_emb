@@ -1097,6 +1097,234 @@ const sendNewsletter = async (userEmail, userName, newsletter) => {
   }
 };
 
+/**
+ * Envoyer les identifiants de connexion à un nouvel administrateur
+ */
+const sendAdminCredentials = async (email, username, password) => {
+  const transporter = createTransporter();
+
+  // Mode console si Gmail n'est pas configuré
+  if (!transporter) {
+    console.log('\n📧 ===== IDENTIFIANTS ADMIN (MODE CONSOLE) =====');
+    console.log(`À: ${email}`);
+    console.log(`Sujet: Vos identifiants d'administrateur EMB Transfer`);
+    console.log(`\nBonjour,\n`);
+    console.log(`Votre compte administrateur a été créé avec succès.\n`);
+    console.log(`Voici vos identifiants de connexion :\n`);
+    console.log(`Nom d'utilisateur: ${username}`);
+    console.log(`Mot de passe: ${password}\n`);
+    console.log(`⚠️  IMPORTANT: Pour des raisons de sécurité, veuillez changer votre mot de passe lors de votre première connexion.\n`);
+    console.log(`Vous pouvez vous connecter à l'adresse: ${process.env.ADMIN_URL || 'https://votre-site.com/admin'}\n`);
+    console.log(`Cordialement,`);
+    console.log(`L'équipe EMB Transfer`);
+    console.log('=============================================\n');
+    return true;
+  }
+
+  // Envoi réel par Gmail
+  try {
+    const info = await transporter.sendMail({
+      from: `"${process.env.EMAIL_FROM_NAME || 'EMB Transfer'}" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Vos identifiants d\'administrateur - EMB Transfer',
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              background-color: #0a0a0a;
+              color: #ffffff;
+              margin: 0;
+              padding: 0;
+            }
+            .container {
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 40px 20px;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 40px;
+            }
+            .logo {
+              font-size: 32px;
+              font-weight: bold;
+              color: #FF3B38;
+              margin-bottom: 10px;
+            }
+            .content {
+              background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+              border: 2px solid #FF3B38;
+              border-radius: 16px;
+              padding: 40px;
+            }
+            .credentials-box {
+              background-color: #2a2a2a;
+              border: 1px solid #FF3B38;
+              border-radius: 12px;
+              padding: 25px;
+              margin: 30px 0;
+            }
+            .credential-item {
+              margin: 15px 0;
+              padding: 15px;
+              background-color: #1a1a1a;
+              border-radius: 8px;
+            }
+            .credential-label {
+              color: #999999;
+              font-size: 12px;
+              text-transform: uppercase;
+              margin-bottom: 8px;
+            }
+            .credential-value {
+              color: #ffffff;
+              font-size: 18px;
+              font-weight: bold;
+              font-family: 'Courier New', monospace;
+            }
+            .warning {
+              background-color: #FF3B38;
+              color: #ffffff;
+              padding: 20px;
+              border-radius: 12px;
+              margin: 20px 0;
+              text-align: center;
+            }
+            .message {
+              color: #cccccc;
+              line-height: 1.6;
+              margin: 20px 0;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 40px;
+              color: #666666;
+              font-size: 12px;
+            }
+            .button {
+              display: inline-block;
+              background: linear-gradient(135deg, #FF3B38 0%, #E91E63 100%);
+              color: #ffffff;
+              padding: 15px 40px;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: bold;
+              margin: 20px 0;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="logo">EMB TRANSFER</div>
+              <p style="color: #999999; margin: 0;">Plateforme d'Administration</p>
+            </div>
+
+            <div class="content">
+              <h2 style="color: #FF3B38; margin-top: 0;">Bienvenue dans l'équipe !</h2>
+
+              <p class="message">
+                Votre compte administrateur a été créé avec succès. Voici vos identifiants de connexion :
+              </p>
+
+              <div class="credentials-box">
+                <div class="credential-item">
+                  <div class="credential-label">Nom d'utilisateur</div>
+                  <div class="credential-value">${username}</div>
+                </div>
+                <div class="credential-item">
+                  <div class="credential-label">Mot de passe temporaire</div>
+                  <div class="credential-value">${password}</div>
+                </div>
+              </div>
+
+              <div class="warning">
+                <strong>⚠️ IMPORTANT</strong><br>
+                Pour des raisons de sécurité, veuillez changer votre mot de passe lors de votre première connexion.
+              </div>
+
+              <div style="text-align: center;">
+                <a href="${process.env.ADMIN_URL || 'https://votre-site.com/admin'}" class="button">
+                  Se connecter au panel admin
+                </a>
+              </div>
+
+              <p class="message">
+                Si vous n'avez pas demandé la création de ce compte, veuillez contacter immédiatement l'équipe technique.
+              </p>
+            </div>
+
+            <div class="footer">
+              <p>
+                Cet email contient des informations confidentielles.<br>
+                Ne le transférez à personne.
+              </p>
+              <p style="margin-top: 20px;">
+                © 2024 EMB Transfer - Tous droits réservés
+              </p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `
+Bienvenue dans l'équipe !
+
+Votre compte administrateur a été créé avec succès.
+
+Vos identifiants de connexion :
+- Nom d'utilisateur: ${username}
+- Mot de passe temporaire: ${password}
+
+⚠️ IMPORTANT: Pour des raisons de sécurité, veuillez changer votre mot de passe lors de votre première connexion.
+
+URL de connexion: ${process.env.ADMIN_URL || 'https://votre-site.com/admin'}
+
+Si vous n'avez pas demandé la création de ce compte, veuillez contacter immédiatement l'équipe technique.
+
+Cordialement,
+L'équipe EMB Transfer
+      `
+    });
+
+    console.log(`✅ Identifiants admin envoyés à ${email}`);
+    return true;
+  } catch (error) {
+    console.error(`❌ Erreur envoi identifiants admin à ${email}:`, error.message);
+    throw error;
+  }
+};
+
+/**
+ * Générer un mot de passe aléatoire sécurisé
+ */
+const generateRandomPassword = (length = 12) => {
+  const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+  const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const numbers = '0123456789';
+  const symbols = '!@#$%^&*';
+
+  const allChars = lowercase + uppercase + numbers + symbols;
+
+  // Assurer qu'on a au moins un de chaque type
+  let password = '';
+  password += lowercase[Math.floor(Math.random() * lowercase.length)];
+  password += uppercase[Math.floor(Math.random() * uppercase.length)];
+  password += numbers[Math.floor(Math.random() * numbers.length)];
+  password += symbols[Math.floor(Math.random() * symbols.length)];
+
+  // Remplir le reste aléatoirement
+  for (let i = password.length; i < length; i++) {
+    password += allChars[Math.floor(Math.random() * allChars.length)];
+  }
+
+  // Mélanger les caractères
+  return password.split('').sort(() => Math.random() - 0.5).join('');
+};
+
 module.exports = {
   generateVerificationCode,
   sendVerificationCode,
@@ -1107,5 +1335,7 @@ module.exports = {
   sendEmail,
   sendEmailFromTemplate,
   replaceVariables,
-  sendNewsletter
+  sendNewsletter,
+  sendAdminCredentials,
+  generateRandomPassword
 };
