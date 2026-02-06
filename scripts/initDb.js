@@ -1,36 +1,40 @@
 const bcrypt = require('bcryptjs');
-const db = require('../config/database');
+const { PrismaClient } = require('@prisma/client');
+
+const prisma = new PrismaClient();
 
 async function initDatabase() {
   try {
-    console.log('🔧 Initialisation de la base de données...\n');
-
-    // Attendre que la base de données soit prête
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    console.log('Initialisation de la base de donnees...\n');
 
     // Vérifier si un admin existe déjà
-    const existingAdmin = await db.get('SELECT * FROM admins WHERE username = ?', ['admin']);
+    const existingAdmin = await prisma.admins.findUnique({
+      where: { username: 'admin' }
+    });
 
     if (!existingAdmin) {
-      // Créer un admin par défaut
       const defaultPassword = 'admin123';
       const hashedPassword = await bcrypt.hash(defaultPassword, 10);
 
-      await db.run(
-        'INSERT INTO admins (username, password, email) VALUES (?, ?, ?)',
-        ['admin', hashedPassword, 'admin@emb.com']
-      );
+      await prisma.admins.create({
+        data: {
+          username: 'admin',
+          password: hashedPassword,
+          email: 'admin@emb.com',
+          is_active: true
+        }
+      });
 
-      console.log('✅ Administrateur par défaut créé avec succès !');
+      console.log('Administrateur par defaut cree !');
       console.log('   Username: admin');
       console.log('   Password: admin123');
-      console.log('   ⚠️  CHANGEZ CE MOT DE PASSE EN PRODUCTION !\n');
+      console.log('   CHANGEZ CE MOT DE PASSE EN PRODUCTION !\n');
     } else {
-      console.log('ℹ️  Un administrateur existe déjà.\n');
+      console.log('Un administrateur existe deja.\n');
     }
 
     // Initialiser les permissions par défaut
-    console.log('🔐 Initialisation des permissions...\n');
+    console.log('Initialisation des permissions...\n');
 
     const defaultPermissions = [
       // Gestion des échanges
@@ -58,42 +62,56 @@ async function initDatabase() {
       ['MANAGE_NEWSLETTER_SUBSCRIBERS', 'Gérer les abonnés', 'Voir et gérer les abonnés aux newsletters', 'NEWSLETTERS']
     ];
 
-    // Insérer les permissions
+    // Insérer les permissions (upsert pour éviter les doublons)
     for (const [code, name, description, category] of defaultPermissions) {
-      await db.run(
-        'INSERT OR IGNORE INTO permissions (code, name, description, category) VALUES (?, ?, ?, ?)',
-        [code, name, description, category]
-      );
+      await prisma.permissions.upsert({
+        where: { code },
+        update: { name, description, category },
+        create: { code, name, description, category }
+      });
     }
 
-    console.log(`✅ ${defaultPermissions.length} permissions initialisées\n`);
+    console.log(`${defaultPermissions.length} permissions initialisees\n`);
 
     // Attribuer toutes les permissions à l'admin par défaut
-    const admin = await db.get('SELECT id FROM admins WHERE username = ?', ['admin']);
+    const admin = await prisma.admins.findUnique({
+      where: { username: 'admin' }
+    });
+
     if (admin) {
-      const permissions = await db.all('SELECT id FROM permissions');
+      const permissions = await prisma.permissions.findMany();
       for (const permission of permissions) {
-        await db.run(
-          'INSERT OR IGNORE INTO admin_permissions (admin_id, permission_id) VALUES (?, ?)',
-          [admin.id, permission.id]
-        );
+        await prisma.admin_permissions.upsert({
+          where: {
+            admin_id_permission_id: {
+              admin_id: admin.id,
+              permission_id: permission.id
+            }
+          },
+          update: {},
+          create: {
+            admin_id: admin.id,
+            permission_id: permission.id
+          }
+        });
       }
-      console.log('✅ Toutes les permissions attribuées à l\'admin par défaut\n');
+      console.log('Toutes les permissions attribuees a l\'admin par defaut\n');
     }
 
     // Afficher les configurations
-    const configs = await db.all('SELECT * FROM config');
-    console.log('📋 Configurations actuelles:');
+    const configs = await prisma.config.findMany();
+    console.log('Configurations actuelles:');
     configs.forEach(config => {
-      console.log(`   • ${config.key}: ${config.value}`);
+      console.log(`   ${config.key}: ${config.value}`);
     });
 
-    console.log('\n✅ Base de données initialisée avec succès !');
+    console.log('\nBase de donnees initialisee avec succes !');
 
-    await db.close();
+    await prisma.$disconnect();
     process.exit(0);
   } catch (error) {
-    console.error('❌ Erreur lors de l\'initialisation:', error);
+    console.error('Erreur lors de l\'initialisation:', error);
+    await prisma.$disconnect();
     process.exit(1);
   }
 }
