@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const db = require('../config/database');
+const prisma = require('../config/prisma');
 
 const authMiddleware = (req, res, next) => {
   try {
@@ -76,10 +76,10 @@ const checkPermission = (permissionCode) => {
       }
 
       // Vérifier si l'admin est actif
-      const admin = await db.get(
-        'SELECT is_active FROM admins WHERE id = ?',
-        [decoded.id]
-      );
+      const admin = await prisma.admins.findUnique({
+        where: { id: decoded.id },
+        select: { is_active: true }
+      });
 
       if (!admin) {
         return res.status(403).json({
@@ -88,7 +88,7 @@ const checkPermission = (permissionCode) => {
         });
       }
 
-      if (!admin.is_active) {
+      if (admin.is_active === false) {
         return res.status(403).json({
           success: false,
           message: 'Compte administrateur désactivé'
@@ -96,14 +96,17 @@ const checkPermission = (permissionCode) => {
       }
 
       // Vérifier si l'admin a la permission requise
-      const permission = await db.get(`
-        SELECT p.id, p.code, p.name
-        FROM permissions p
-        INNER JOIN admin_permissions ap ON p.id = ap.permission_id
-        WHERE ap.admin_id = ? AND p.code = ?
-      `, [decoded.id, permissionCode]);
+      const adminPermission = await prisma.admin_permissions.findFirst({
+        where: {
+          admin_id: decoded.id,
+          permissions: { code: permissionCode }
+        },
+        include: {
+          permissions: { select: { id: true, code: true, name: true } }
+        }
+      });
 
-      if (!permission) {
+      if (!adminPermission) {
         return res.status(403).json({
           success: false,
           message: 'Permission insuffisante',
@@ -112,7 +115,7 @@ const checkPermission = (permissionCode) => {
       }
 
       req.admin = decoded;
-      req.permission = permission;
+      req.permission = adminPermission.permissions;
       next();
     } catch (error) {
       return res.status(401).json({
@@ -146,12 +149,12 @@ const checkAnyPermission = (permissionCodes) => {
       }
 
       // Vérifier si l'admin est actif
-      const admin = await db.get(
-        'SELECT is_active FROM admins WHERE id = ?',
-        [decoded.id]
-      );
+      const admin = await prisma.admins.findUnique({
+        where: { id: decoded.id },
+        select: { is_active: true }
+      });
 
-      if (!admin || !admin.is_active) {
+      if (!admin || admin.is_active === false) {
         return res.status(403).json({
           success: false,
           message: 'Compte administrateur désactivé ou introuvable'
@@ -159,16 +162,17 @@ const checkAnyPermission = (permissionCodes) => {
       }
 
       // Vérifier si l'admin a au moins une des permissions
-      const placeholders = permissionCodes.map(() => '?').join(',');
-      const permission = await db.get(`
-        SELECT p.id, p.code, p.name
-        FROM permissions p
-        INNER JOIN admin_permissions ap ON p.id = ap.permission_id
-        WHERE ap.admin_id = ? AND p.code IN (${placeholders})
-        LIMIT 1
-      `, [decoded.id, ...permissionCodes]);
+      const adminPermission = await prisma.admin_permissions.findFirst({
+        where: {
+          admin_id: decoded.id,
+          permissions: { code: { in: permissionCodes } }
+        },
+        include: {
+          permissions: { select: { id: true, code: true, name: true } }
+        }
+      });
 
-      if (!permission) {
+      if (!adminPermission) {
         return res.status(403).json({
           success: false,
           message: 'Permission insuffisante',
@@ -177,7 +181,7 @@ const checkAnyPermission = (permissionCodes) => {
       }
 
       req.admin = decoded;
-      req.permission = permission;
+      req.permission = adminPermission.permissions;
       next();
     } catch (error) {
       return res.status(401).json({
