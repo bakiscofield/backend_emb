@@ -1,13 +1,13 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const prisma = require('../config/prisma');
-const { authMiddleware, adminMiddleware } = require('../middleware/auth');
+const { authMiddleware, checkPermission, checkAnyPermission } = require('../middleware/auth');
 
 const router = express.Router();
 
 // ==================== ADMIN: Créer un code promo ====================
 router.post('/',
-  adminMiddleware,
+  checkPermission('MANAGE_PROMO_CODES'),
   [
     body('code').trim().notEmpty().withMessage('Code requis'),
     body('discount_percent').isFloat({ min: 0, max: 100 }).withMessage('Pourcentage entre 0 et 100'),
@@ -70,7 +70,7 @@ router.post('/',
 
 // ==================== ADMIN: Liste des codes promo ====================
 router.get('/',
-  adminMiddleware,
+  checkAnyPermission(['VIEW_PROMO_CODES', 'MANAGE_PROMO_CODES']),
   async (req, res) => {
     try {
       const promoCodes = await prisma.promo_codes.findMany({
@@ -111,7 +111,7 @@ router.get('/',
 
 // ==================== ADMIN: Activer/Désactiver un code promo ====================
 router.patch('/:id/toggle',
-  adminMiddleware,
+  checkPermission('MANAGE_PROMO_CODES'),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -144,7 +144,7 @@ router.patch('/:id/toggle',
 
 // ==================== ADMIN: Supprimer un code promo ====================
 router.delete('/:id',
-  adminMiddleware,
+  checkPermission('MANAGE_PROMO_CODES'),
   async (req, res) => {
     try {
       const { id } = req.params;

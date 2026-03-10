@@ -4,8 +4,7 @@ const path = require('path');
 const multer = require('multer');
 const fs = require('fs');
 const prisma = require('../config/prisma');
-const { authMiddleware: authenticateUser } = require('../middleware/auth');
-const authenticateAdmin = require('../middleware/authAdmin');
+const { authMiddleware: authenticateUser, checkPermission, checkAnyPermission } = require('../middleware/auth');
 
 const UPLOAD_DIR = path.join(__dirname, '../uploads/kyc');
 
@@ -79,21 +78,32 @@ router.post('/submit', authenticateUser, upload.fields([
       });
     }
 
-    // Insérer le nouveau document
-    const newDoc = await prisma.kyc_documents.create({
-      data: {
+    // Supprimer les anciens documents rejetés pour ce user (nettoyage avant ressoumission)
+    await prisma.kyc_documents.deleteMany({
+      where: {
         user_id: userId,
-        document_type,
-        document_front: frontPath,
-        document_back: backPath,
-        status: 'pending'
+        status: 'rejected'
       }
     });
 
-    // Mettre à jour le statut KYC de l'utilisateur
-    await prisma.users.update({
-      where: { id: userId },
-      data: { kyc_status: 'pending' }
+    // Créer le nouveau document et mettre à jour le statut user en transaction
+    const newDoc = await prisma.$transaction(async (tx) => {
+      const doc = await tx.kyc_documents.create({
+        data: {
+          user_id: userId,
+          document_type,
+          document_front: frontPath,
+          document_back: backPath,
+          status: 'pending'
+        }
+      });
+
+      await tx.users.update({
+        where: { id: userId },
+        data: { kyc_status: 'pending' }
+      });
+
+      return doc;
     });
 
     res.status(201).json({
@@ -167,7 +177,7 @@ router.get('/status', authenticateUser, async (req, res) => {
 // ========== ROUTES ADMIN ==========
 
 // GET /api/kyc/admin/pending - Obtenir tous les documents en attente
-router.get('/admin/pending', authenticateAdmin, async (req, res) => {
+router.get('/admin/pending', checkAnyPermission(['VIEW_KYC', 'MANAGE_KYC']), async (req, res) => {
   try {
     const documents = await prisma.kyc_documents.findMany({
       where: { status: 'pending' },
@@ -209,7 +219,7 @@ router.get('/admin/pending', authenticateAdmin, async (req, res) => {
 });
 
 // GET /api/kyc/admin/all - Obtenir tous les documents (avec filtres)
-router.get('/admin/all', authenticateAdmin, async (req, res) => {
+router.get('/admin/all', checkAnyPermission(['VIEW_KYC', 'MANAGE_KYC']), async (req, res) => {
   try {
     const { status } = req.query;
 
@@ -262,7 +272,7 @@ router.get('/admin/all', authenticateAdmin, async (req, res) => {
 });
 
 // POST /api/kyc/admin/verify/:id - Vérifier/Approuver un document
-router.post('/admin/verify/:id', authenticateAdmin, async (req, res) => {
+router.post('/admin/verify/:id', checkPermission('MANAGE_KYC'), async (req, res) => {
   try {
     const docId = parseInt(req.params.id);
     const adminId = req.admin.id;
@@ -279,23 +289,24 @@ router.post('/admin/verify/:id', authenticateAdmin, async (req, res) => {
       });
     }
 
-    // Mettre à jour le document
-    await prisma.kyc_documents.update({
-      where: { id: docId },
-      data: {
-        status: 'approved',
-        verified_by: adminId,
-        verified_at: new Date()
-      }
-    });
+    // Mettre à jour le document ET l'utilisateur en transaction
+    await prisma.$transaction(async (tx) => {
+      await tx.kyc_documents.update({
+        where: { id: docId },
+        data: {
+          status: 'approved',
+          verified_by: adminId,
+          verified_at: new Date()
+        }
+      });
 
-    // Mettre à jour l'utilisateur
-    await prisma.users.update({
-      where: { id: doc.user_id },
-      data: {
-        kyc_verified: 1,
-        kyc_status: 'approved'
-      }
+      await tx.users.update({
+        where: { id: doc.user_id },
+        data: {
+          kyc_verified: 1,
+          kyc_status: 'approved'
+        }
+      });
     });
 
     res.json({
@@ -312,7 +323,7 @@ router.post('/admin/verify/:id', authenticateAdmin, async (req, res) => {
 });
 
 // POST /api/kyc/admin/reject/:id - Rejeter un document
-router.post('/admin/reject/:id', authenticateAdmin, async (req, res) => {
+router.post('/admin/reject/:id', checkPermission('MANAGE_KYC'), async (req, res) => {
   try {
     const docId = parseInt(req.params.id);
     const adminId = req.admin.id;
@@ -337,24 +348,25 @@ router.post('/admin/reject/:id', authenticateAdmin, async (req, res) => {
       });
     }
 
-    // Mettre à jour le document
-    await prisma.kyc_documents.update({
-      where: { id: docId },
-      data: {
-        status: 'rejected',
-        verified_by: adminId,
-        verified_at: new Date(),
-        rejection_reason: reason
-      }
-    });
+    // Mettre à jour le document ET l'utilisateur en transaction
+    await prisma.$transaction(async (tx) => {
+      await tx.kyc_documents.update({
+        where: { id: docId },
+        data: {
+          status: 'rejected',
+          verified_by: adminId,
+          verified_at: new Date(),
+          rejection_reason: reason
+        }
+      });
 
-    // Mettre à jour l'utilisateur
-    await prisma.users.update({
-      where: { id: doc.user_id },
-      data: {
-        kyc_verified: 0,
-        kyc_status: 'rejected'
-      }
+      await tx.users.update({
+        where: { id: doc.user_id },
+        data: {
+          kyc_verified: 0,
+          kyc_status: 'rejected'
+        }
+      });
     });
 
     res.json({
@@ -371,7 +383,7 @@ router.post('/admin/reject/:id', authenticateAdmin, async (req, res) => {
 });
 
 // GET /api/kyc/document/:filename - Servir les documents (sécurisé)
-router.get('/document/:filename', authenticateAdmin, (req, res) => {
+router.get('/document/:filename', checkAnyPermission(['VIEW_KYC', 'MANAGE_KYC']), (req, res) => {
   const filename = req.params.filename;
   const filePath = path.join(UPLOAD_DIR, filename);
 

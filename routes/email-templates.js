@@ -2,12 +2,12 @@ const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const { body, validationResult } = require('express-validator');
-const { authMiddleware, adminMiddleware } = require('../middleware/auth');
+const { checkPermission, checkAnyPermission } = require('../middleware/auth');
 
 const prisma = new PrismaClient();
 
 // GET all email templates (Admin only)
-router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
+router.get('/', checkAnyPermission(['VIEW_EMAIL_TEMPLATES', 'MANAGE_EMAIL_TEMPLATES']), async (req, res) => {
   try {
     const templates = await prisma.email_templates.findMany({
       orderBy: { type: 'asc' }
@@ -27,7 +27,7 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
 });
 
 // GET single email template by ID (Admin only)
-router.get('/:id', authMiddleware, adminMiddleware, async (req, res) => {
+router.get('/:id', checkAnyPermission(['VIEW_EMAIL_TEMPLATES', 'MANAGE_EMAIL_TEMPLATES']), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -56,7 +56,7 @@ router.get('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 });
 
 // GET template by type (Admin only)
-router.get('/by-type/:type', authMiddleware, adminMiddleware, async (req, res) => {
+router.get('/by-type/:type', checkAnyPermission(['VIEW_EMAIL_TEMPLATES', 'MANAGE_EMAIL_TEMPLATES']), async (req, res) => {
   try {
     const { type } = req.params;
 
@@ -87,8 +87,7 @@ router.get('/by-type/:type', authMiddleware, adminMiddleware, async (req, res) =
 // POST - Create new email template (Admin only)
 router.post(
   '/',
-  authMiddleware,
-  adminMiddleware,
+  checkPermission('MANAGE_EMAIL_TEMPLATES'),
   [
     body('type').trim().notEmpty().withMessage('Le type est requis'),
     body('subject').trim().notEmpty().withMessage('Le sujet est requis'),
@@ -148,8 +147,7 @@ router.post(
 // PUT - Update email template (Admin only)
 router.put(
   '/:id',
-  authMiddleware,
-  adminMiddleware,
+  checkPermission('MANAGE_EMAIL_TEMPLATES'),
   [
     body('subject').optional().trim().notEmpty().withMessage('Le sujet ne peut pas être vide'),
     body('html_body').optional().trim().notEmpty().withMessage('Le contenu HTML ne peut pas être vide')
@@ -212,7 +210,7 @@ router.put(
 );
 
 // DELETE - Delete email template (Admin only)
-router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
+router.delete('/:id', checkPermission('MANAGE_EMAIL_TEMPLATES'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -248,8 +246,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 // POST - Test email template (Admin only)
 router.post(
   '/:id/test',
-  authMiddleware,
-  adminMiddleware,
+  checkPermission('MANAGE_EMAIL_TEMPLATES'),
   [
     body('email').trim().isEmail().withMessage('Email invalide')
   ],

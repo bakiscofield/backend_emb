@@ -59,7 +59,7 @@ async function checkMonthlyLimit(userId, amount) {
     }
 
     // Déterminer la clé de configuration selon le statut KYC
-    const hasKyc = user.kyc_verified === 1 && user.kyc_status === 'verified';
+    const hasKyc = user.kyc_verified === 1 && user.kyc_status === 'approved';
     const configKey = hasKyc ? 'monthly_limit_with_kyc' : 'monthly_limit_without_kyc';
 
     // Récupérer la limite mensuelle depuis la configuration
@@ -124,7 +124,7 @@ async function getMonthlyLimitStats(userId) {
       throw new Error('Utilisateur introuvable');
     }
 
-    const hasKyc = user.kyc_verified === 1 && user.kyc_status === 'verified';
+    const hasKyc = user.kyc_verified === 1 && user.kyc_status === 'approved';
 
     // Déterminer la clé de configuration selon le statut KYC
     const configKey = hasKyc ? 'monthly_limit_with_kyc' : 'monthly_limit_without_kyc';

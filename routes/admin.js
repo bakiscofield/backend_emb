@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const prisma = require('../config/prisma');
-const { adminMiddleware, checkPermission } = require('../middleware/auth');
+const { adminMiddleware, checkPermission, checkAnyPermission } = require('../middleware/auth');
 const { sendAdminCredentials, generateRandomPassword } = require('../utils/emailService');
 
 const router = express.Router();
@@ -43,19 +43,28 @@ router.post('/login', [
 
     // Générer le token JWT
     const token = jwt.sign(
-      { id: admin.id, username: admin.username, isAdmin: true },
+      { id: admin.id, username: admin.username, role: admin.role || 'agent', isAdmin: true },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
+
+    // Récupérer les permissions de l'admin
+    const adminPermissions = await prisma.admin_permissions.findMany({
+      where: { admin_id: admin.id },
+      include: { permissions: { select: { code: true } } }
+    });
+    const permissionCodes = adminPermissions.map(ap => ap.permissions.code);
 
     res.json({
       success: true,
       message: 'Connexion admin réussie',
       token,
-      admin: { 
-        id: admin.id, 
-        username: admin.username, 
-        email: admin.email 
+      admin: {
+        id: admin.id,
+        username: admin.username,
+        email: admin.email,
+        role: admin.role || 'agent',
+        permissions: permissionCodes
       }
     });
   } catch (error) {
@@ -78,7 +87,7 @@ router.post('/create', adminMiddleware, [
       return res.status(400).json({ success: false, errors: errors.array() });
     }
 
-    const { username, email } = req.body;
+    const { username, email, role = 'agent' } = req.body;
 
     // Vérifier si l'admin existe déjà
     const existingAdmin = await prisma.admins.findUnique({
@@ -113,9 +122,39 @@ router.post('/create', adminMiddleware, [
       data: {
         username,
         password: hashedPassword,
-        email
+        email,
+        role
       }
     });
+
+    // Auto-attribuer les permissions selon le rôle
+    try {
+      let permissionCodes;
+      if (role === 'admin') {
+        // Admin: toutes les permissions
+        const allPerms = await prisma.permissions.findMany({ select: { id: true } });
+        permissionCodes = allPerms.map(p => p.id);
+      } else {
+        // Agent: permissions de base
+        const agentPerms = await prisma.permissions.findMany({
+          where: { code: { in: ['VIEW_TRANSACTIONS', 'VALIDATE_TRANSACTIONS', 'VIEW_COMMISSIONS'] } },
+          select: { id: true }
+        });
+        permissionCodes = agentPerms.map(p => p.id);
+      }
+
+      if (permissionCodes.length > 0) {
+        await prisma.admin_permissions.createMany({
+          data: permissionCodes.map(permId => ({
+            admin_id: newAdmin.id,
+            permission_id: permId
+          }))
+        });
+        console.log(`✅ ${permissionCodes.length} permission(s) auto-attribuées au ${role}`);
+      }
+    } catch (permError) {
+      console.error('⚠️ Erreur lors de l\'attribution des permissions:', permError);
+    }
 
     // Envoyer l'email avec les identifiants
     try {
@@ -129,7 +168,7 @@ router.post('/create', adminMiddleware, [
     res.status(201).json({
       success: true,
       message: 'Administrateur créé avec succès. Les identifiants ont été envoyés par email.',
-      admin: { id: newAdmin.id, username, email }
+      admin: { id: newAdmin.id, username, email, role }
     });
   } catch (error) {
     console.error('Erreur lors de la création de l\'admin:', error);
@@ -149,7 +188,9 @@ router.get('/profile', adminMiddleware, async (req, res) => {
         id: true,
         username: true,
         email: true,
-        created_at: true
+        role: true,
+        created_at: true,
+        commission_balance: true
       }
     });
 
@@ -173,6 +214,433 @@ router.get('/profile', adminMiddleware, async (req, res) => {
   }
 });
 
+// Récupérer les permissions de l'admin connecté
+router.get('/my-permissions', adminMiddleware, async (req, res) => {
+  try {
+    const adminPermissions = await prisma.admin_permissions.findMany({
+      where: { admin_id: req.admin.id },
+      include: { permissions: { select: { code: true } } }
+    });
+    const permissionCodes = adminPermissions.map(ap => ap.permissions.code);
+
+    res.json({
+      success: true,
+      permissions: permissionCodes
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des permissions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur'
+    });
+  }
+});
+
+// === COMMISSION ENDPOINTS (avant /:id pour éviter le conflit de route) ===
+
+// Obtenir le solde et résumé de commission de l'admin connecté
+router.get('/commission/balance', adminMiddleware, async (req, res) => {
+  try {
+    const admin = await prisma.admins.findUnique({
+      where: { id: req.admin.id },
+      select: { commission_balance: true }
+    });
+
+    const balance = admin?.commission_balance || 0;
+
+    // Résumé : total crédité, total retiré, nombre de transactions
+    const [creditAgg, debitAgg, txCount] = await Promise.all([
+      prisma.commission_ledger.aggregate({
+        where: { admin_id: req.admin.id, type: 'credit' },
+        _sum: { amount: true },
+        _count: true
+      }),
+      prisma.commission_ledger.aggregate({
+        where: { admin_id: req.admin.id, type: 'debit' },
+        _sum: { amount: true },
+        _count: true
+      }),
+      prisma.commission_ledger.count({
+        where: { admin_id: req.admin.id }
+      })
+    ]);
+
+    res.json({
+      success: true,
+      balance,
+      summary: {
+        total_credited: creditAgg._sum.amount || 0,
+        total_withdrawn: debitAgg._sum.amount || 0,
+        credit_count: creditAgg._count,
+        debit_count: debitAgg._count,
+        total_entries: txCount
+      }
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération du solde commission:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Historique du ledger de l'admin connecté
+router.get('/commission/history', adminMiddleware, async (req, res) => {
+  try {
+    const { type, limit = 50, offset = 0 } = req.query;
+
+    const whereClause = { admin_id: req.admin.id };
+    if (type && (type === 'credit' || type === 'debit')) {
+      whereClause.type = type;
+    }
+
+    const [entries, total] = await Promise.all([
+      prisma.commission_ledger.findMany({
+        where: whereClause,
+        include: {
+          transactions: {
+            select: { transaction_id: true, amount: true, total_amount: true }
+          }
+        },
+        orderBy: { created_at: 'desc' },
+        take: parseInt(limit),
+        skip: parseInt(offset)
+      }),
+      prisma.commission_ledger.count({ where: whereClause })
+    ]);
+
+    res.json({
+      success: true,
+      entries,
+      total,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération de l\'historique commission:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Retrait de commission (admin=immédiat, agent=demande en attente)
+router.post('/commission/withdraw', adminMiddleware, async (req, res) => {
+  try {
+    const { amount, network, phone_number } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Montant invalide'
+      });
+    }
+
+    if (!network || !['flooz', 'tmoney'].includes(network)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Veuillez sélectionner un réseau (Flooz ou TMoney)'
+      });
+    }
+
+    if (!phone_number || phone_number.trim().length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'Veuillez entrer un numéro de retrait valide'
+      });
+    }
+
+    const role = req.admin.role || 'agent';
+
+    // Agent: créer une demande en attente
+    if (role !== 'admin') {
+      const admin = await prisma.admins.findUnique({
+        where: { id: req.admin.id },
+        select: { commission_balance: true }
+      });
+      const currentBalance = admin?.commission_balance || 0;
+      if (amount > currentBalance) {
+        return res.status(400).json({ success: false, message: 'Solde insuffisant' });
+      }
+
+      const request = await prisma.withdrawal_requests.create({
+        data: {
+          admin_id: req.admin.id,
+          amount,
+          network,
+          phone_number: phone_number.trim(),
+          status: 'pending'
+        }
+      });
+
+      return res.json({
+        success: true,
+        pending: true,
+        message: 'Demande de retrait envoyée, en attente d\'approbation',
+        request
+      });
+    }
+
+    // Admin: retrait immédiat
+    const result = await prisma.$transaction(async (tx) => {
+      const admin = await tx.admins.findUnique({
+        where: { id: req.admin.id },
+        select: { commission_balance: true }
+      });
+
+      const currentBalance = admin?.commission_balance || 0;
+
+      if (amount > currentBalance) {
+        throw new Error('INSUFFICIENT_BALANCE');
+      }
+
+      const newBalance = currentBalance - amount;
+
+      await tx.admins.update({
+        where: { id: req.admin.id },
+        data: { commission_balance: newBalance }
+      });
+
+      const ledgerEntry = await tx.commission_ledger.create({
+        data: {
+          admin_id: req.admin.id,
+          type: 'debit',
+          amount,
+          balance_after: newBalance,
+          description: `Retrait de ${amount} FCFA via ${network.toUpperCase()} (${phone_number.trim()})`
+        }
+      });
+
+      return { newBalance, ledgerEntry };
+    });
+
+    res.json({
+      success: true,
+      message: `Retrait de ${amount} FCFA effectué avec succès`,
+      balance: result.newBalance,
+      entry: result.ledgerEntry
+    });
+  } catch (error) {
+    if (error.message === 'INSUFFICIENT_BALANCE') {
+      return res.status(400).json({
+        success: false,
+        message: 'Solde insuffisant'
+      });
+    }
+    console.error('Erreur lors du retrait de commission:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Mes demandes de retrait (agent voit ses propres demandes)
+router.get('/commission/withdrawal-requests', adminMiddleware, async (req, res) => {
+  try {
+    const requests = await prisma.withdrawal_requests.findMany({
+      where: { admin_id: req.admin.id },
+      orderBy: { requested_at: 'desc' }
+    });
+
+    res.json({ success: true, requests });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des demandes:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Toutes les demandes en attente (admin avec permission APPROVE_WITHDRAWALS)
+router.get('/commission/all-withdrawal-requests', checkPermission('APPROVE_WITHDRAWALS'), async (req, res) => {
+  try {
+    const { status = 'pending' } = req.query;
+    const whereClause = {};
+    if (status && status !== 'all') {
+      whereClause.status = status;
+    }
+
+    const requests = await prisma.withdrawal_requests.findMany({
+      where: whereClause,
+      include: {
+        admins: { select: { id: true, username: true, email: true, commission_balance: true } }
+      },
+      orderBy: { requested_at: 'desc' }
+    });
+
+    res.json({ success: true, requests });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des demandes:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Approuver une demande de retrait
+router.patch('/commission/withdrawal-requests/:id/approve', checkPermission('APPROVE_WITHDRAWALS'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const request = await prisma.withdrawal_requests.findUnique({
+      where: { id: parseInt(id) }
+    });
+
+    if (!request) {
+      return res.status(404).json({ success: false, message: 'Demande introuvable' });
+    }
+    if (request.status !== 'pending') {
+      return res.status(400).json({ success: false, message: 'Cette demande a déjà été traitée' });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const admin = await tx.admins.findUnique({
+        where: { id: request.admin_id },
+        select: { commission_balance: true }
+      });
+
+      const currentBalance = admin?.commission_balance || 0;
+      if (request.amount > currentBalance) {
+        throw new Error('INSUFFICIENT_BALANCE');
+      }
+
+      const newBalance = currentBalance - request.amount;
+
+      await tx.admins.update({
+        where: { id: request.admin_id },
+        data: { commission_balance: newBalance }
+      });
+
+      const ledgerEntry = await tx.commission_ledger.create({
+        data: {
+          admin_id: request.admin_id,
+          type: 'debit',
+          amount: request.amount,
+          balance_after: newBalance,
+          description: `Retrait approuvé de ${request.amount} FCFA via ${request.network.toUpperCase()} (${request.phone_number})`
+        }
+      });
+
+      const updated = await tx.withdrawal_requests.update({
+        where: { id: parseInt(id) },
+        data: {
+          status: 'approved',
+          processed_by: req.admin.id,
+          processed_at: new Date()
+        }
+      });
+
+      return { updated, newBalance, ledgerEntry };
+    });
+
+    res.json({
+      success: true,
+      message: `Retrait de ${request.amount} FCFA approuvé`,
+      request: result.updated
+    });
+  } catch (error) {
+    if (error.message === 'INSUFFICIENT_BALANCE') {
+      return res.status(400).json({ success: false, message: 'Solde insuffisant pour cet agent' });
+    }
+    console.error('Erreur lors de l\'approbation:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Rejeter une demande de retrait
+router.patch('/commission/withdrawal-requests/:id/reject', checkPermission('APPROVE_WITHDRAWALS'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const request = await prisma.withdrawal_requests.findUnique({
+      where: { id: parseInt(id) }
+    });
+
+    if (!request) {
+      return res.status(404).json({ success: false, message: 'Demande introuvable' });
+    }
+    if (request.status !== 'pending') {
+      return res.status(400).json({ success: false, message: 'Cette demande a déjà été traitée' });
+    }
+
+    const updated = await prisma.withdrawal_requests.update({
+      where: { id: parseInt(id) },
+      data: {
+        status: 'rejected',
+        processed_by: req.admin.id,
+        processed_at: new Date(),
+        rejection_reason: reason || null
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Demande de retrait rejetée',
+      request: updated
+    });
+  } catch (error) {
+    console.error('Erreur lors du rejet:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Tous les soldes des admins (super-admin)
+router.get('/commission/all', checkPermission('MANAGE_COMMISSIONS'), async (req, res) => {
+  try {
+    const admins = await prisma.admins.findMany({
+      where: { is_active: true, role: { not: 'admin' } },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        commission_balance: true
+      },
+      orderBy: { commission_balance: 'desc' }
+    });
+
+    res.json({
+      success: true,
+      admins: admins.map(a => ({
+        ...a,
+        commission_balance: a.commission_balance || 0
+      }))
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des soldes commissions:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
+// Historique d'un admin spécifique (super-admin)
+router.get('/commission/history/:adminId', checkPermission('MANAGE_COMMISSIONS'), async (req, res) => {
+  try {
+    const { adminId } = req.params;
+    const { type, limit = 50, offset = 0 } = req.query;
+
+    const whereClause = { admin_id: parseInt(adminId) };
+    if (type && (type === 'credit' || type === 'debit')) {
+      whereClause.type = type;
+    }
+
+    const [entries, total] = await Promise.all([
+      prisma.commission_ledger.findMany({
+        where: whereClause,
+        include: {
+          transactions: {
+            select: { transaction_id: true, amount: true, total_amount: true }
+          }
+        },
+        orderBy: { created_at: 'desc' },
+        take: parseInt(limit),
+        skip: parseInt(offset)
+      }),
+      prisma.commission_ledger.count({ where: whereClause })
+    ]);
+
+    res.json({
+      success: true,
+      entries,
+      total,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération de l\'historique commission admin:', error);
+    res.status(500).json({ success: false, message: 'Erreur serveur' });
+  }
+});
+
 // Lister tous les administrateurs avec leurs permissions
 router.get('/list', checkPermission('MANAGE_ADMINS'), async (req, res) => {
   try {
@@ -181,6 +649,7 @@ router.get('/list', checkPermission('MANAGE_ADMINS'), async (req, res) => {
         id: true,
         username: true,
         email: true,
+        role: true,
         is_active: true,
         created_at: true,
         admin_permissions: {
@@ -206,6 +675,7 @@ router.get('/list', checkPermission('MANAGE_ADMINS'), async (req, res) => {
       id: admin.id,
       username: admin.username,
       email: admin.email,
+      role: admin.role || 'agent',
       is_active: admin.is_active,
       created_at: admin.created_at,
       permissions: admin.admin_permissions.map(ap => ap.permissions),

@@ -1,9 +1,52 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
+const multer = require('multer');
+const fs = require('fs');
 const prisma = require('../config/prisma');
-const { authMiddleware: authenticateUser } = require('../middleware/auth');
-const authenticateAdmin = require('../middleware/authAdmin');
+const { authMiddleware: authenticateUser, checkPermission, checkAnyPermission } = require('../middleware/auth');
+
+// Configuration multer pour l'upload des fichiers chat
+const CHAT_UPLOAD_DIR = path.join(__dirname, '../uploads/chat');
+
+const chatStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    if (!fs.existsSync(CHAT_UPLOAD_DIR)) {
+      fs.mkdirSync(CHAT_UPLOAD_DIR, { recursive: true });
+    }
+    cb(null, CHAT_UPLOAD_DIR);
+  },
+  filename: (req, file, cb) => {
+    const senderId = req.user ? req.user.id : req.admin.id;
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, `${senderId}-${uniqueSuffix}${ext}`);
+  }
+});
+
+const chatUpload = multer({
+  storage: chatStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB max
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp|pdf|doc|docx|xls|xlsx/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const allowedMimes = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+      'application/pdf',
+      'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+    const mimetype = allowedMimes.includes(file.mimetype);
+
+    if (extname && mimetype) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Type de fichier non accepté. Formats autorisés : images (JPEG, PNG, GIF, WebP), PDF, documents Word/Excel'));
+    }
+  }
+});
 
 // ========== ROUTES UTILISATEURS ==========
 
@@ -59,16 +102,32 @@ router.get('/conversation', authenticateUser, async (req, res) => {
 });
 
 // POST /api/chat/message - Envoyer un message
-router.post('/message', authenticateUser, async (req, res) => {
+router.post('/message', authenticateUser, (req, res, next) => {
+  chatUpload.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ success: false, message: 'Le fichier est trop volumineux (max 10MB)' });
+      }
+      return res.status(400).json({ success: false, message: err.message });
+    } else if (err) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
   try {
     const userId = req.user.id;
     const { conversation_id, message } = req.body;
     const conversationId = parseInt(conversation_id);
+    const file = req.file;
 
-    if (!conversation_id || !message || !message.trim()) {
+    const hasMessage = message && message.trim();
+    const hasFile = !!file;
+
+    if (!conversation_id || (!hasMessage && !hasFile)) {
       return res.status(400).json({
         success: false,
-        message: 'ID de conversation et message requis'
+        message: 'ID de conversation et message ou fichier requis'
       });
     }
 
@@ -87,14 +146,23 @@ router.post('/message', authenticateUser, async (req, res) => {
       });
     }
 
+    // Préparer les données du message
+    const messageData = {
+      conversation_id: conversationId,
+      sender_type: 'user',
+      sender_id: userId,
+      message: hasMessage ? message.trim() : ''
+    };
+
+    if (hasFile) {
+      messageData.file_url = `/uploads/chat/${file.filename}`;
+      messageData.file_name = file.originalname;
+      messageData.file_type = file.mimetype;
+    }
+
     // Insérer le message
     const newMessage = await prisma.chat_messages.create({
-      data: {
-        conversation_id: conversationId,
-        sender_type: 'user',
-        sender_id: userId,
-        message: message.trim()
-      }
+      data: messageData
     });
 
     // Mettre à jour last_message_at de la conversation
@@ -170,7 +238,7 @@ router.get('/messages/:conversationId', authenticateUser, async (req, res) => {
 // ========== ROUTES ADMIN ==========
 
 // GET /api/chat/admin/conversations - Obtenir toutes les conversations
-router.get('/admin/conversations', authenticateAdmin, async (req, res) => {
+router.get('/admin/conversations', checkAnyPermission(['VIEW_CHAT', 'MANAGE_CHAT']), async (req, res) => {
   try {
     const { status } = req.query;
 
@@ -223,7 +291,7 @@ router.get('/admin/conversations', authenticateAdmin, async (req, res) => {
 });
 
 // GET /api/chat/admin/conversation/:id - Obtenir une conversation spécifique
-router.get('/admin/conversation/:id', authenticateAdmin, async (req, res) => {
+router.get('/admin/conversation/:id', checkAnyPermission(['VIEW_CHAT', 'MANAGE_CHAT']), async (req, res) => {
   try {
     const conversationId = parseInt(req.params.id);
 
@@ -276,16 +344,32 @@ router.get('/admin/conversation/:id', authenticateAdmin, async (req, res) => {
 });
 
 // POST /api/chat/admin/message - L'admin envoie un message
-router.post('/admin/message', authenticateAdmin, async (req, res) => {
+router.post('/admin/message', checkPermission('MANAGE_CHAT'), (req, res, next) => {
+  chatUpload.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ success: false, message: 'Le fichier est trop volumineux (max 10MB)' });
+      }
+      return res.status(400).json({ success: false, message: err.message });
+    } else if (err) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
   try {
     const adminId = req.admin.id;
     const { conversation_id, message } = req.body;
     const conversationId = parseInt(conversation_id);
+    const file = req.file;
 
-    if (!conversation_id || !message || !message.trim()) {
+    const hasMessage = message && message.trim();
+    const hasFile = !!file;
+
+    if (!conversation_id || (!hasMessage && !hasFile)) {
       return res.status(400).json({
         success: false,
-        message: 'ID de conversation et message requis'
+        message: 'ID de conversation et message ou fichier requis'
       });
     }
 
@@ -301,14 +385,23 @@ router.post('/admin/message', authenticateAdmin, async (req, res) => {
       });
     }
 
+    // Préparer les données du message
+    const messageData = {
+      conversation_id: conversationId,
+      sender_type: 'admin',
+      sender_id: adminId,
+      message: hasMessage ? message.trim() : ''
+    };
+
+    if (hasFile) {
+      messageData.file_url = `/uploads/chat/${file.filename}`;
+      messageData.file_name = file.originalname;
+      messageData.file_type = file.mimetype;
+    }
+
     // Insérer le message
     const newMessage = await prisma.chat_messages.create({
-      data: {
-        conversation_id: conversationId,
-        sender_type: 'admin',
-        sender_id: adminId,
-        message: message.trim()
-      }
+      data: messageData
     });
 
     // Mettre à jour la conversation
@@ -345,7 +438,7 @@ router.post('/admin/message', authenticateAdmin, async (req, res) => {
 });
 
 // POST /api/chat/admin/close/:id - Fermer une conversation
-router.post('/admin/close/:id', authenticateAdmin, async (req, res) => {
+router.post('/admin/close/:id', checkPermission('MANAGE_CHAT'), async (req, res) => {
   try {
     const conversationId = parseInt(req.params.id);
 
@@ -382,7 +475,7 @@ router.post('/admin/close/:id', authenticateAdmin, async (req, res) => {
 });
 
 // POST /api/chat/admin/reopen/:id - Réouvrir une conversation
-router.post('/admin/reopen/:id', authenticateAdmin, async (req, res) => {
+router.post('/admin/reopen/:id', checkPermission('MANAGE_CHAT'), async (req, res) => {
   try {
     const conversationId = parseInt(req.params.id);
 

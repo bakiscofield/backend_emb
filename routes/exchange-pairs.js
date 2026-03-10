@@ -55,9 +55,11 @@ router.get('/', async (req, res) => {
         from_method_name: fromMethod.name,
         from_method_code: fromMethod.code,
         from_method_icon: fromMethod.icon,
+        from_method_logo_url: fromMethod.logo_url || null,
         to_method_name: toMethod.name,
         to_method_code: toMethod.code,
         to_method_icon: toMethod.icon,
+        to_method_logo_url: toMethod.logo_url || null,
         fields: pair.exchange_fields.map(field => ({
           ...field,
           options: field.options ? JSON.parse(field.options) : null
@@ -111,9 +113,11 @@ router.get('/:id', async (req, res) => {
       from_method_name: fromMethod.name,
       from_method_code: fromMethod.code,
       from_method_icon: fromMethod.icon,
+      from_method_logo_url: fromMethod.logo_url || null,
       to_method_name: toMethod.name,
       to_method_code: toMethod.code,
       to_method_icon: toMethod.icon,
+      to_method_logo_url: toMethod.logo_url || null,
       fields: pair.exchange_fields.map(field => ({
         ...field,
         options: field.options ? JSON.parse(field.options) : null
@@ -321,9 +325,11 @@ router.post(
         from_method_name: fromMethod.name,
         from_method_code: fromMethod.code,
         from_method_icon: fromMethod.icon,
+        from_method_logo_url: fromMethod.logo_url || null,
         to_method_name: toMethod.name,
         to_method_code: toMethod.code,
         to_method_icon: toMethod.icon,
+        to_method_logo_url: toMethod.logo_url || null,
         fields: newPair.exchange_fields.map(f => ({
           ...f,
           options: f.options ? JSON.parse(f.options) : null
@@ -540,9 +546,11 @@ router.put(
         from_method_name: fromMethod.name,
         from_method_code: fromMethod.code,
         from_method_icon: fromMethod.icon,
+        from_method_logo_url: fromMethod.logo_url || null,
         to_method_name: toMethod.name,
         to_method_code: toMethod.code,
         to_method_icon: toMethod.icon,
+        to_method_logo_url: toMethod.logo_url || null,
         fields: updated.exchange_fields.map(f => ({
           ...f,
           options: f.options ? JSON.parse(f.options) : null

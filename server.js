@@ -21,6 +21,7 @@ const legalRoutes = require('./routes/legal');
 const emailTemplatesRoutes = require('./routes/email-templates');
 const { router: fcmRoutes } = require('./routes/fcm');
 const promoCodesRoutes = require('./routes/promo-codes');
+const pointsDeVenteRoutes = require('./routes/points-de-vente');
 
 // Initialiser la base de données
 const db = require('./config/database');
@@ -64,7 +65,8 @@ app.get('/', (req, res) => {
       push: '/api/push',
       legal: '/api/legal',
       emailTemplates: '/api/email-templates',
-      fcm: '/api/fcm'
+      fcm: '/api/fcm',
+      pointsDeVente: '/api/points-de-vente'
     }
   });
 });
@@ -86,6 +88,7 @@ app.use('/api/legal', legalRoutes);
 app.use('/api/email-templates', emailTemplatesRoutes);
 app.use('/api/fcm', fcmRoutes);
 app.use('/api/promo-codes', promoCodesRoutes);
+app.use('/api/points-de-vente', pointsDeVenteRoutes);
 
 // Servir les fichiers statiques (uploads)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -128,9 +131,14 @@ app.listen(PORT, '0.0.0.0', () => {
 ║  • Exchange Pairs: /api/exchange-pairs                ║
 ║  • Notifications:  /api/notifications                 ║
 ║  • Promo Codes:    /api/promo-codes                   ║
+║  • Points de vente:/api/points-de-vente               ║
 ║                                                       ║
 ╚═══════════════════════════════════════════════════════╝
   `);
+
+  // Démarrer le scheduler d'assignations
+  const { startScheduler } = require('./services/scheduler');
+  startScheduler();
 });
 
 // Gestion de l'arrêt propre

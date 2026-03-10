@@ -6,6 +6,7 @@ const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const { createNotification } = require('./notifications');
 const { sendTransactionCreated, sendTransactionValidated, sendTransactionRejected, sendEmailFromTemplate } = require('../utils/emailService');
 const { checkMonthlyLimit, getMonthlyLimitStats } = require('../utils/transactionLimits');
+const { assignTransaction, refuseAssignment } = require('../services/assignment');
 
 const router = express.Router();
 
@@ -13,16 +14,20 @@ const router = express.Router();
 router.post('/create', authMiddleware, [
   body('amount').isFloat({ min: 1 }).withMessage('Montant invalide'),
   body('payment_reference').trim().notEmpty().withMessage('Référence de paiement requise'),
-  body('exchange_pair_id').optional().isInt().withMessage('ID de paire d\'échange invalide'),
-  body('from_number').optional().trim(),
-  body('to_number').optional().trim(),
-  body('tmoney_number').optional().isMobilePhone('any').withMessage('Numéro Tmoney invalide'),
-  body('flooz_number').optional().isMobilePhone('any').withMessage('Numéro Flooz invalide'),
-  body('dynamic_fields').optional().isObject().withMessage('Champs dynamiques invalides')
+  body('exchange_pair_id').optional({ values: 'null' }).isInt().withMessage('ID de paire d\'échange invalide'),
+  body('from_number').optional({ values: 'null' }).trim(),
+  body('to_number').optional({ values: 'null' }).trim(),
+  body('tmoney_number').optional({ values: 'null' }).isMobilePhone('any').withMessage('Numéro Tmoney invalide'),
+  body('flooz_number').optional({ values: 'null' }).isMobilePhone('any').withMessage('Numéro Flooz invalide'),
+  body('dynamic_fields').optional({ values: 'null' }).isObject().withMessage('Champs dynamiques invalides'),
+  body('point_de_vente_id').optional({ values: 'null' }).isInt().withMessage('ID point de vente invalide'),
+  body('client_latitude').optional({ values: 'null' }).isFloat().withMessage('Latitude invalide'),
+  body('client_longitude').optional({ values: 'null' }).isFloat().withMessage('Longitude invalide')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('[Transaction Create] Validation errors:', JSON.stringify(errors.array()), 'Body:', JSON.stringify(req.body));
       return res.status(400).json({ success: false, errors: errors.array() });
     }
 
@@ -37,7 +42,10 @@ router.post('/create', authMiddleware, [
       tmoney_number,
       flooz_number,
       dynamic_fields,
-      promo_code
+      promo_code,
+      point_de_vente_id,
+      client_latitude,
+      client_longitude
     } = req.body;
 
     let percentage = 0;
@@ -72,6 +80,7 @@ router.post('/create', authMiddleware, [
       }
 
       if (!from_number || !to_number) {
+        console.log('[Transaction Create] Missing numbers - from_number:', JSON.stringify(from_number), 'to_number:', JSON.stringify(to_number), 'body:', JSON.stringify(req.body));
         return res.status(400).json({
           success: false,
           message: 'Numéros source et destination requis'
@@ -179,28 +188,42 @@ router.post('/create', authMiddleware, [
     }
 
     // Vérifier les limites
-    const minAmount = await prisma.config.findUnique({
-      where: { key: 'min_amount' }
-    });
-    const maxAmount = await prisma.config.findUnique({
-      where: { key: 'max_amount' }
-    });
+    // Utiliser les min/max de la paire d'échange si disponibles, sinon les globaux
+    let effectiveMinAmount, effectiveMaxAmount;
 
-    if (amount < parseFloat(minAmount.value)) {
+    if (exchangePair && exchangePair.min_amount !== null && exchangePair.min_amount !== undefined) {
+      effectiveMinAmount = parseFloat(exchangePair.min_amount);
+    } else {
+      const minAmountConfig = await prisma.config.findUnique({
+        where: { key: 'min_amount' }
+      });
+      effectiveMinAmount = parseFloat(minAmountConfig.value);
+    }
+
+    if (exchangePair && exchangePair.max_amount !== null && exchangePair.max_amount !== undefined) {
+      effectiveMaxAmount = parseFloat(exchangePair.max_amount);
+    } else {
+      const maxAmountConfig = await prisma.config.findUnique({
+        where: { key: 'max_amount' }
+      });
+      effectiveMaxAmount = parseFloat(maxAmountConfig.value);
+    }
+
+    if (amount < effectiveMinAmount) {
       return res.status(400).json({
         success: false,
-        message: `Le montant minimum est de ${minAmount.value} FCFA`
+        message: `Le montant minimum est de ${effectiveMinAmount} FCFA`
       });
     }
 
-    if (amount > parseFloat(maxAmount.value)) {
+    if (amount > effectiveMaxAmount) {
       return res.status(400).json({
         success: false,
-        message: `Le montant maximum est de ${maxAmount.value} FCFA`
+        message: `Le montant maximum est de ${effectiveMaxAmount} FCFA`
       });
     }
 
-    // Vérifier la limite mensuelle pour les utilisateurs sans KYC
+    // Vérifier la limite mensuelle
     const limitCheck = await checkMonthlyLimit(req.user.id, amount);
     if (!limitCheck.allowed) {
       return res.status(403).json({
@@ -217,6 +240,10 @@ router.post('/create', authMiddleware, [
 
     // Générer un ID unique pour la transaction
     const transactionId = `EMB-${uuidv4().substring(0, 8).toUpperCase()}`;
+
+    // Déterminer si c'est une transaction qui nécessite un point de vente
+    const category = exchangePair?.category;
+    const needsPointDeVente = (category === 'money_transfer' || category === 'card_order') && point_de_vente_id;
 
     // Insérer la transaction
     const result = await prisma.transactions.create({
@@ -236,7 +263,10 @@ router.post('/create', authMiddleware, [
         exchange_pair_id: exchange_pair_id || null,
         dynamic_fields: dynamic_fields ? JSON.stringify(dynamic_fields) : null,
         tax_amount: taxAmount,
-        status: 'pending'
+        status: 'pending',
+        point_de_vente_id: needsPointDeVente ? parseInt(point_de_vente_id) : null,
+        client_latitude: client_latitude ? parseFloat(client_latitude) : null,
+        client_longitude: client_longitude ? parseFloat(client_longitude) : null
       }
     });
 
@@ -270,14 +300,23 @@ router.post('/create', authMiddleware, [
       }
     });
 
-    // Créer une notification pour l'admin
-    await createNotification({
-      admin_id: null, // null = pour tous les admins
-      type: 'new_transaction',
-      title: 'Nouvelle demande d\'échange',
-      message: `${req.user.name || 'Un client'} a créé une demande d'échange de ${amount} FCFA`,
-      transaction_id: result.id
-    });
+    // Assigner la transaction à un admin éligible
+    try {
+      await assignTransaction(
+        result.id,
+        needsPointDeVente ? parseInt(point_de_vente_id) : null
+      );
+    } catch (assignError) {
+      console.error('Erreur lors de l\'assignation, fallback notification broadcast:', assignError);
+      // Fallback: notification générique à tous les admins
+      await createNotification({
+        admin_id: null,
+        type: 'new_transaction',
+        title: 'Nouvelle demande d\'échange',
+        message: `${req.user.name || 'Un client'} a créé une demande d'échange de ${amount} FCFA`,
+        transaction_id: result.id
+      });
+    }
 
     // Envoyer un email de confirmation à l'utilisateur si l'email est disponible
     if (req.user.email) {
@@ -467,7 +506,9 @@ router.get('/:id', authMiddleware, async (req, res) => {
         },
         exchange_pairs: {
           select: {
-            category: true
+            category: true,
+            payment_methods_exchange_pairs_from_method_idTopayment_methods: { select: { name: true } },
+            payment_methods_exchange_pairs_to_method_idTopayment_methods: { select: { name: true } }
           }
         }
       }
@@ -511,7 +552,11 @@ router.get('/:id', authMiddleware, async (req, res) => {
       bookmaker_name: transaction.bookmakers?.name || null,
       user_name: transaction.users?.name || null,
       user_phone: transaction.users?.phone || null,
-      exchange_pair_category: transaction.exchange_pairs?.category || null
+      exchange_pair_name: transaction.exchange_pairs
+        ? `${transaction.exchange_pairs.payment_methods_exchange_pairs_from_method_idTopayment_methods?.name || '?'} → ${transaction.exchange_pairs.payment_methods_exchange_pairs_to_method_idTopayment_methods?.name || '?'}`
+        : null,
+      exchange_pair_category: transaction.exchange_pairs?.category || null,
+      dynamic_fields: transaction.dynamic_fields ? (typeof transaction.dynamic_fields === 'string' ? JSON.parse(transaction.dynamic_fields) : transaction.dynamic_fields) : null
     };
 
     const formattedHistory = history.map(h => ({
@@ -536,9 +581,25 @@ router.get('/:id', authMiddleware, async (req, res) => {
 // Obtenir toutes les transactions (admin uniquement)
 router.get('/', adminMiddleware, async (req, res) => {
   try {
-    const { status, limit = 50, offset = 0 } = req.query;
+    const { status, limit = 50, offset = 0, assigned_to_me, accepted_by_me } = req.query;
 
-    const whereClause = status ? { status } : {};
+    const whereClause = {};
+    if (status) whereClause.status = status;
+
+    if (assigned_to_me === 'true') {
+      // Mes assignations en attente d'acceptation (pending dans transaction_assignments)
+      whereClause.assigned_to = req.admin.id;
+      whereClause.transaction_assignments = {
+        some: { admin_id: req.admin.id, status: 'pending' }
+      };
+    } else if (accepted_by_me === 'true') {
+      // Transactions acceptées par cet admin, pas encore traitées
+      whereClause.assigned_to = req.admin.id;
+      whereClause.status = 'pending';
+      whereClause.transaction_assignments = {
+        some: { admin_id: req.admin.id, status: 'accepted' }
+      };
+    }
 
     const transactions = await prisma.transactions.findMany({
       where: whereClause,
@@ -556,8 +617,32 @@ router.get('/', adminMiddleware, async (req, res) => {
         },
         exchange_pairs: {
           select: {
-            category: true
+            category: true,
+            payment_methods_exchange_pairs_from_method_idTopayment_methods: { select: { name: true } },
+            payment_methods_exchange_pairs_to_method_idTopayment_methods: { select: { name: true } }
           }
+        },
+        assigned_admin: {
+          select: {
+            id: true,
+            username: true
+          }
+        },
+        points_de_vente: {
+          select: {
+            id: true,
+            name: true,
+            address: true
+          }
+        },
+        transaction_assignments: {
+          where: { status: 'pending' },
+          select: {
+            id: true,
+            expires_at: true,
+            assigned_at: true
+          },
+          take: 1
         }
       },
       orderBy: {
@@ -572,13 +657,26 @@ router.get('/', adminMiddleware, async (req, res) => {
       where: whereClause
     });
 
-    // Format response to match the old structure
+    // Format response
     const formattedTransactions = transactions.map(t => ({
       ...t,
       bookmaker_name: t.bookmakers?.name || null,
       user_name: t.users?.name || null,
       user_phone: t.users?.phone || null,
-      exchange_pair_category: t.exchange_pairs?.category || null
+      exchange_pair_name: t.exchange_pairs
+        ? `${t.exchange_pairs.payment_methods_exchange_pairs_from_method_idTopayment_methods?.name || '?'} → ${t.exchange_pairs.payment_methods_exchange_pairs_to_method_idTopayment_methods?.name || '?'}`
+        : null,
+      exchange_pair_category: t.exchange_pairs?.category || null,
+      assigned_admin_name: t.assigned_admin?.username || null,
+      point_de_vente_name: t.points_de_vente?.name || null,
+      point_de_vente_address: t.points_de_vente?.address || null,
+      assignment_expires_at: t.transaction_assignments?.[0]?.expires_at || null,
+      dynamic_fields: t.dynamic_fields ? (typeof t.dynamic_fields === 'string' ? JSON.parse(t.dynamic_fields) : t.dynamic_fields) : null,
+      // Cleanup nested objects
+      bookmakers: undefined,
+      assigned_admin: undefined,
+      points_de_vente: undefined,
+      transaction_assignments: undefined
     }));
 
     res.json({
@@ -644,6 +742,29 @@ router.put('/:id/validate', adminMiddleware, [
       });
     }
 
+    // Vérifier que l'admin est bien l'assigné (si assignation active)
+    if (transaction.assigned_to && transaction.assigned_to !== req.admin.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Cette transaction est assignée à un autre administrateur'
+      });
+    }
+
+    // Marquer l'assignation comme acceptée
+    if (transaction.assigned_to === req.admin.id) {
+      await prisma.transaction_assignments.updateMany({
+        where: {
+          transaction_id: parseInt(req.params.id),
+          admin_id: req.admin.id,
+          status: 'pending'
+        },
+        data: {
+          status: 'accepted',
+          responded_at: new Date()
+        }
+      });
+    }
+
     // Vérifier si c'est un abonnement et si le message est requis
     const isSubscription = transaction.exchange_pairs?.category === 'subscription';
     if (status === 'validated' && isSubscription && !admin_message) {
@@ -673,6 +794,41 @@ router.put('/:id/validate', adminMiddleware, [
         changed_by: req.admin.id
       }
     });
+
+    // Créditer la commission à l'admin si la transaction est validée
+    if (status === 'validated') {
+      const commission = transaction.total_amount - transaction.amount;
+      if (commission > 0) {
+        try {
+          await prisma.$transaction(async (tx) => {
+            const admin = await tx.admins.findUnique({
+              where: { id: req.admin.id },
+              select: { commission_balance: true }
+            });
+            const currentBalance = admin?.commission_balance || 0;
+            const newBalance = currentBalance + commission;
+
+            await tx.admins.update({
+              where: { id: req.admin.id },
+              data: { commission_balance: newBalance }
+            });
+
+            await tx.commission_ledger.create({
+              data: {
+                admin_id: req.admin.id,
+                type: 'credit',
+                amount: commission,
+                balance_after: newBalance,
+                transaction_id: parseInt(req.params.id),
+                description: `Commission transaction ${transaction.transaction_id}`
+              }
+            });
+          });
+        } catch (commissionError) {
+          console.error('Erreur lors du crédit de commission:', commissionError);
+        }
+      }
+    }
 
     // Récupérer les informations des moyens de paiement pour le message
     let fromMethodName = 'Source';
@@ -755,8 +911,8 @@ router.put('/:id/validate', adminMiddleware, [
           };
 
           await sendEmailFromTemplate(
+            emailTemplate.type,
             user.email,
-            emailTemplate,
             templateVariables
           );
         } else {
@@ -782,6 +938,110 @@ router.put('/:id/validate', adminMiddleware, [
     res.status(500).json({ 
       success: false, 
       message: 'Erreur serveur' 
+    });
+  }
+});
+
+// Refuser une assignation (admin uniquement)
+router.put('/:id/refuse', adminMiddleware, async (req, res) => {
+  try {
+    const transactionId = parseInt(req.params.id);
+
+    const transaction = await prisma.transactions.findUnique({
+      where: { id: transactionId }
+    });
+
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message: 'Transaction non trouvée'
+      });
+    }
+
+    if (transaction.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cette transaction a déjà été traitée'
+      });
+    }
+
+    if (transaction.assigned_to !== req.admin.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Cette transaction ne vous est pas assignée'
+      });
+    }
+
+    const newAdmin = await refuseAssignment(transactionId, req.admin.id);
+
+    res.json({
+      success: true,
+      message: newAdmin
+        ? `Transaction réassignée à un autre administrateur`
+        : 'Transaction refusée. Aucun autre administrateur disponible, les super-admins ont été notifiés.',
+      reassigned_to: newAdmin ? newAdmin.id : null
+    });
+  } catch (error) {
+    console.error('Erreur lors du refus de la transaction:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur'
+    });
+  }
+});
+
+// Accepter une assignation (admin uniquement)
+router.put('/:id/accept', adminMiddleware, async (req, res) => {
+  try {
+    const transactionId = parseInt(req.params.id);
+
+    const transaction = await prisma.transactions.findUnique({
+      where: { id: transactionId }
+    });
+
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message: 'Transaction non trouvée'
+      });
+    }
+
+    if (transaction.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cette transaction a déjà été traitée'
+      });
+    }
+
+    if (transaction.assigned_to !== req.admin.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Cette transaction ne vous est pas assignée'
+      });
+    }
+
+    // Marquer l'assignation comme acceptée et supprimer le timeout
+    await prisma.transaction_assignments.updateMany({
+      where: {
+        transaction_id: transactionId,
+        admin_id: req.admin.id,
+        status: 'pending'
+      },
+      data: {
+        status: 'accepted',
+        responded_at: new Date()
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Assignation acceptée. Vous pouvez traiter cette transaction à tout moment.'
+    });
+  } catch (error) {
+    console.error('Erreur lors de l\'acceptation de l\'assignation:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur'
     });
   }
 });
@@ -832,6 +1092,173 @@ router.get('/stats/overview', adminMiddleware, async (req, res) => {
     });
   } catch (error) {
     console.error('Erreur lors de la récupération des statistiques:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur'
+    });
+  }
+});
+
+// Statistiques détaillées avec filtres par date et par admin (super-admin)
+router.get('/stats/detailed', adminMiddleware, async (req, res) => {
+  try {
+    const { date_from, date_to, admin_id } = req.query;
+
+    // Construire le filtre de date
+    const dateFilter = {};
+    if (date_from) {
+      dateFilter.gte = new Date(date_from);
+    }
+    if (date_to) {
+      // Inclure toute la journée de fin
+      const endDate = new Date(date_to);
+      endDate.setHours(23, 59, 59, 999);
+      dateFilter.lte = endDate;
+    }
+
+    const whereClause = {};
+    if (Object.keys(dateFilter).length > 0) {
+      whereClause.created_at = dateFilter;
+    }
+    if (admin_id) {
+      whereClause.validated_by = parseInt(admin_id);
+    }
+
+    // Compteurs par statut
+    const [total, pending, validated, rejected] = await Promise.all([
+      prisma.transactions.count({ where: whereClause }),
+      prisma.transactions.count({ where: { ...whereClause, status: 'pending' } }),
+      prisma.transactions.count({ where: { ...whereClause, status: 'validated' } }),
+      prisma.transactions.count({ where: { ...whereClause, status: 'rejected' } })
+    ]);
+
+    // Montants pour les transactions validées
+    const validatedWhere = { ...whereClause, status: 'validated' };
+    const validatedAgg = await prisma.transactions.aggregate({
+      where: validatedWhere,
+      _sum: { total_amount: true, amount: true }
+    });
+
+    const totalAmountValidated = validatedAgg._sum.total_amount || 0;
+    const totalAmount = validatedAgg._sum.amount || 0;
+    const totalCommission = totalAmountValidated - totalAmount;
+
+    // Stats par admin (qui a validé/rejeté)
+    const adminWhereBase = { ...whereClause, validated_by: { not: null } };
+    const transactionsWithAdmin = await prisma.transactions.findMany({
+      where: adminWhereBase,
+      select: {
+        validated_by: true,
+        status: true,
+        amount: true,
+        total_amount: true
+      }
+    });
+
+    const adminStatsMap = {};
+    for (const t of transactionsWithAdmin) {
+      const aid = t.validated_by;
+      if (!adminStatsMap[aid]) {
+        adminStatsMap[aid] = { admin_id: aid, validated: 0, rejected: 0, total_amount: 0, commission: 0 };
+      }
+      if (t.status === 'validated') {
+        adminStatsMap[aid].validated++;
+        adminStatsMap[aid].total_amount += t.amount || 0;
+        adminStatsMap[aid].commission += (t.total_amount || 0) - (t.amount || 0);
+      } else if (t.status === 'rejected') {
+        adminStatsMap[aid].rejected++;
+      }
+    }
+
+    // Enrichir avec les noms d'admin
+    const adminIds = Object.keys(adminStatsMap).map(Number);
+    const admins = adminIds.length > 0 ? await prisma.admins.findMany({
+      where: { id: { in: adminIds } },
+      select: { id: true, username: true }
+    }) : [];
+
+    const adminStatsArray = Object.values(adminStatsMap).map((s) => ({
+      ...s,
+      admin_name: admins.find(a => a.id === s.admin_id)?.username || 'Inconnu'
+    }));
+
+    // Liste des transactions de la période
+    const transactions = await prisma.transactions.findMany({
+      where: whereClause,
+      include: {
+        users: { select: { name: true, phone: true, email: true } },
+        admins: { select: { id: true, username: true } },
+        exchange_pairs: {
+          select: {
+            category: true,
+            payment_methods_exchange_pairs_from_method_idTopayment_methods: { select: { name: true } },
+            payment_methods_exchange_pairs_to_method_idTopayment_methods: { select: { name: true } }
+          }
+        },
+        points_de_vente: { select: { name: true, address: true } },
+        assigned_admin: { select: { id: true, username: true } },
+        bookmakers: { select: { name: true } }
+      },
+      orderBy: { created_at: 'desc' },
+      take: 500
+    });
+
+    const formattedTransactions = transactions.map(t => ({
+      id: t.id,
+      transaction_id: t.transaction_id,
+      user_name: t.users?.name || null,
+      user_phone: t.users?.phone || null,
+      user_email: t.users?.email || null,
+      amount: t.amount,
+      percentage: t.percentage,
+      total_amount: t.total_amount,
+      status: t.status,
+      created_at: t.created_at,
+      validated_at: t.validated_at,
+      validated_by_name: t.admins?.username || null,
+      assigned_admin_name: t.assigned_admin?.username || null,
+      point_de_vente_name: t.points_de_vente?.name || null,
+      point_de_vente_address: t.points_de_vente?.address || null,
+      exchange_pair_name: t.exchange_pairs
+        ? `${t.exchange_pairs.payment_methods_exchange_pairs_from_method_idTopayment_methods?.name || '?'} → ${t.exchange_pairs.payment_methods_exchange_pairs_to_method_idTopayment_methods?.name || '?'}`
+        : null,
+      exchange_pair_category: t.exchange_pairs?.category || null,
+      payment_reference: t.payment_reference,
+      from_number: t.from_number || null,
+      to_number: t.to_number || null,
+      bookmaker_name: t.bookmakers?.name || null,
+      notes: t.notes || null,
+      admin_message: t.admin_message || null,
+      dynamic_fields: t.dynamic_fields ? (typeof t.dynamic_fields === 'string' ? JSON.parse(t.dynamic_fields) : t.dynamic_fields) : null
+    }));
+
+    // Liste des admins pour le filtre frontend
+    const allAdmins = await prisma.admins.findMany({
+      where: { is_active: true },
+      select: { id: true, username: true }
+    });
+
+    res.json({
+      success: true,
+      stats: {
+        total_transactions: total,
+        pending_transactions: pending,
+        validated_transactions: validated,
+        rejected_transactions: rejected,
+        total_amount_validated: totalAmountValidated,
+        total_commission: totalCommission
+      },
+      admin_stats: adminStatsArray,
+      transactions: formattedTransactions,
+      admins: allAdmins,
+      filters: {
+        date_from: date_from || null,
+        date_to: date_to || null,
+        admin_id: admin_id ? parseInt(admin_id) : null
+      }
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des statistiques détaillées:', error);
     res.status(500).json({
       success: false,
       message: 'Erreur serveur'

@@ -294,10 +294,19 @@ async function addMoneyTransferServices() {
           exchange_pair_id: transferPair.id,
           field_name: 'id_document',
           field_type: 'file',
-          field_label: 'Pièce d\'identité (JPG, PNG, PDF - max 5MB)',
+          field_label: 'Pièce d\'identité - Recto (JPG, PNG, PDF - max 5MB)',
           placeholder: '',
           is_required: true,
           field_order: 18
+        },
+        {
+          exchange_pair_id: transferPair.id,
+          field_name: 'id_document_verso',
+          field_type: 'file',
+          field_label: 'Pièce d\'identité - Verso (JPG, PNG, PDF - max 5MB)',
+          placeholder: '',
+          is_required: true,
+          field_order: 19
         },
 
         // 7. Point de vente

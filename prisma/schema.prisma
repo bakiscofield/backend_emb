@@ -19,22 +19,48 @@ model admin_permissions {
 }
 
 model admins {
-  id                  Int                   @id @default(autoincrement())
-  username            String                @unique(map: "sqlite_autoindex_admins_1")
-  password            String
-  email               String?
-  created_at          DateTime?             @default(now())
-  is_active           Boolean?              @default(true)
-  admin_permissions   admin_permissions[]
-  chat_conversations  chat_conversations[]
-  kyc_documents       kyc_documents[]
-  newsletter_history  newsletter_history[]
-  newsletters         newsletters[]
-  notifications       notifications[]
-  push_subscriptions  push_subscriptions[]
-  transaction_history transaction_history[]
-  transactions        transactions[]
-  promo_codes         promo_codes[]
+  id                      Int                       @id @default(autoincrement())
+  username                String                    @unique(map: "sqlite_autoindex_admins_1")
+  password                String
+  email                   String?
+  role                    String?                   @default("agent")
+  created_at              DateTime?                 @default(now())
+  is_active               Boolean?                  @default(true)
+  commission_balance      Float?                    @default(0)
+  admin_permissions       admin_permissions[]
+  admin_points_de_vente   admin_points_de_vente[]
+  chat_conversations      chat_conversations[]
+  commission_ledger       commission_ledger[]
+  kyc_documents           kyc_documents[]
+  newsletter_history      newsletter_history[]
+  newsletters             newsletters[]
+  notifications           notifications[]
+  promo_codes             promo_codes[]
+  push_subscriptions      push_subscriptions[]
+  transaction_assignments transaction_assignments[]
+  transaction_history     transaction_history[]
+  transactions            transactions[]
+  transactions_assigned   transactions[]            @relation("assigned_admin")
+  withdrawal_requests     withdrawal_requests[]
+  processed_withdrawals   withdrawal_requests[]     @relation("processed_by_admin")
+}
+
+model withdrawal_requests {
+  id               Int       @id @default(autoincrement())
+  admin_id         Int
+  amount           Float
+  network          String
+  phone_number     String
+  status           String    @default("pending")
+  requested_at     DateTime  @default(now())
+  processed_by     Int?
+  processed_at     DateTime?
+  rejection_reason String?
+  admins           admins    @relation(fields: [admin_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  processed_admin  admins?   @relation("processed_by_admin", fields: [processed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([admin_id], map: "idx_withdrawal_requests_admin")
+  @@index([status], map: "idx_withdrawal_requests_status")
 }
 
 model bookmakers {
@@ -70,6 +96,9 @@ model chat_messages {
   message            String
   is_read            Int?               @default(0)
   created_at         DateTime?          @default(now())
+  file_name          String?
+  file_type          String?
+  file_url           String?
   chat_conversations chat_conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([is_read], map: "idx_chat_msg_is_read")
@@ -85,20 +114,20 @@ model config {
 }
 
 model email_templates {
-  id                              Int              @id @default(autoincrement())
-  type                            String           @unique
-  subject                         String
-  html_body                       String
-  text_body                       String?
-  notification_title              String?
-  notification_body               String?
-  variables                       String?
-  description                     String?
-  is_active                       Boolean?         @default(true)
-  created_at                      DateTime?        @default(now())
-  updated_at                      DateTime?        @default(now())
-  exchange_pairs_validated        exchange_pairs[] @relation("validated_template")
-  exchange_pairs_rejected         exchange_pairs[] @relation("rejected_template")
+  id                       Int              @id @default(autoincrement())
+  type                     String           @unique
+  subject                  String
+  html_body                String
+  text_body                String?
+  notification_title       String?
+  notification_body        String?
+  variables                String?
+  description              String?
+  is_active                Boolean?         @default(true)
+  created_at               DateTime?        @default(now())
+  updated_at               DateTime?        @default(now())
+  exchange_pairs_rejected  exchange_pairs[] @relation("rejected_template")
+  exchange_pairs_validated exchange_pairs[] @relation("validated_template")
 }
 
 model email_verification_codes {
@@ -160,10 +189,10 @@ model exchange_pairs {
   validated_email_template_id                                    Int?
   rejected_email_template_id                                     Int?
   exchange_fields                                                exchange_fields[]
-  email_templates_validated                                      email_templates?  @relation("validated_template", fields: [validated_email_template_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  email_templates_rejected                                       email_templates?  @relation("rejected_template", fields: [rejected_email_template_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  payment_methods_exchange_pairs_to_method_idTopayment_methods   payment_methods   @relation("exchange_pairs_to_method_idTopayment_methods", fields: [to_method_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   payment_methods_exchange_pairs_from_method_idTopayment_methods payment_methods   @relation("exchange_pairs_from_method_idTopayment_methods", fields: [from_method_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  payment_methods_exchange_pairs_to_method_idTopayment_methods   payment_methods   @relation("exchange_pairs_to_method_idTopayment_methods", fields: [to_method_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  email_templates_rejected                                       email_templates?  @relation("rejected_template", fields: [rejected_email_template_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  email_templates_validated                                      email_templates?  @relation("validated_template", fields: [validated_email_template_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   transactions                                                   transactions[]
 
   @@unique([from_method_id, to_method_id], map: "sqlite_autoindex_exchange_pairs_1")
@@ -258,11 +287,12 @@ model payment_methods {
   name                                                          String
   code                                                          String           @unique(map: "sqlite_autoindex_payment_methods_1")
   icon                                                          String?
+  logo_url                                                      String?
   description                                                   String?
   is_active                                                     Boolean?         @default(true)
   created_at                                                    DateTime?        @default(now())
-  exchange_pairs_exchange_pairs_to_method_idTopayment_methods   exchange_pairs[] @relation("exchange_pairs_to_method_idTopayment_methods")
   exchange_pairs_exchange_pairs_from_method_idTopayment_methods exchange_pairs[] @relation("exchange_pairs_from_method_idTopayment_methods")
+  exchange_pairs_exchange_pairs_to_method_idTopayment_methods   exchange_pairs[] @relation("exchange_pairs_to_method_idTopayment_methods")
 }
 
 model permissions {
@@ -282,8 +312,8 @@ model push_subscriptions {
   endpoint          String    @unique
   subscription_data String
   created_at        DateTime? @default(now())
-  users             users?    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   admins            admins?   @relation(fields: [admin_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users             users?    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id], map: "idx_push_sub_user_id")
   @@index([admin_id], map: "idx_push_sub_admin_id")
@@ -300,37 +330,62 @@ model transaction_history {
   transactions   transactions @relation(fields: [transaction_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
+model commission_ledger {
+  id             Int           @id @default(autoincrement())
+  admin_id       Int
+  type           String
+  amount         Float
+  balance_after  Float
+  transaction_id Int?
+  description    String?
+  created_at     DateTime?     @default(now())
+  transactions   transactions? @relation(fields: [transaction_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  admins         admins        @relation(fields: [admin_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([admin_id], map: "idx_commission_ledger_admin")
+  @@index([type], map: "idx_commission_ledger_type")
+  @@index([created_at], map: "idx_commission_ledger_created")
+}
+
 model transactions {
-  id                  Int                   @id @default(autoincrement())
-  transaction_id      String                @unique(map: "sqlite_autoindex_transactions_1")
-  user_id             Int
-  tmoney_number       String
-  flooz_number        String
-  amount              Float
-  percentage          Float
-  total_amount        Float
-  payment_reference   String
-  status              String?               @default("pending")
-  bookmaker_id        Int?
-  notes               String?
-  validated_by        Int?
-  validated_at        DateTime?
-  created_at          DateTime?             @default(now())
-  exchange_pair_id    Int?
-  dynamic_fields      String?
-  tax_amount          Float?                @default(0)
-  from_number         String?
-  to_number           String?
-  admin_message       String?
-  promo_code_used     String?
-  promo_discount      Float?                @default(0)
-  notifications       notifications[]
-  transaction_history transaction_history[]
-  promo_code_usage    promo_code_usage?
-  admins              admins?               @relation(fields: [validated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  bookmakers          bookmakers?           @relation(fields: [bookmaker_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users               users                 @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  exchange_pairs      exchange_pairs?       @relation(fields: [exchange_pair_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                      Int                       @id @default(autoincrement())
+  transaction_id          String                    @unique(map: "sqlite_autoindex_transactions_1")
+  user_id                 Int
+  tmoney_number           String
+  flooz_number            String
+  amount                  Float
+  percentage              Float
+  total_amount            Float
+  payment_reference       String
+  status                  String?                   @default("pending")
+  bookmaker_id            Int?
+  notes                   String?
+  validated_by            Int?
+  validated_at            DateTime?
+  created_at              DateTime?                 @default(now())
+  exchange_pair_id        Int?
+  dynamic_fields          String?
+  tax_amount              Float?                    @default(0)
+  from_number             String?
+  to_number               String?
+  admin_message           String?
+  promo_code_used         String?
+  promo_discount          Float?                    @default(0)
+  assigned_to             Int?
+  point_de_vente_id       Int?
+  client_latitude         Float?
+  client_longitude        Float?
+  commission_ledger       commission_ledger[]
+  notifications           notifications[]
+  promo_code_usage        promo_code_usage?
+  transaction_assignments transaction_assignments[]
+  transaction_history     transaction_history[]
+  admins                  admins?                   @relation(fields: [validated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  bookmakers              bookmakers?               @relation(fields: [bookmaker_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users                   users                     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  points_de_vente         points_de_vente?          @relation(fields: [point_de_vente_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  assigned_admin          admins?                   @relation("assigned_admin", fields: [assigned_to], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  exchange_pairs          exchange_pairs?           @relation(fields: [exchange_pair_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model users {
@@ -354,11 +409,11 @@ model users {
   newsletter_recipients      newsletter_recipients[]
   notifications              notifications[]
   password_reset_tokens      password_reset_tokens[]
+  promo_code_usage           promo_code_usage[]
+  promo_codes                promo_codes[]
   push_subscriptions         push_subscriptions[]
   transactions               transactions[]
-  user_fcm_tokens            user_fcm_tokens[]
-  promo_codes                promo_codes[]
-  promo_code_usage           promo_code_usage[]
+  user_fcm_tokens            user_fcm_tokens?
 }
 
 model user_fcm_tokens {
@@ -371,21 +426,21 @@ model user_fcm_tokens {
 }
 
 model promo_codes {
-  id                Int                 @id @default(autoincrement())
-  code              String              @unique
-  discount_percent  Float
-  valid_from        DateTime            @default(now())
-  valid_until       DateTime
-  user_id           Int?
-  max_uses          Int?
-  current_uses      Int                 @default(0)
-  is_active         Boolean             @default(true)
-  created_by        Int
-  created_at        DateTime            @default(now())
-  updated_at        DateTime            @updatedAt
-  users             users?              @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  admins            admins              @relation(fields: [created_by], references: [id], onDelete: NoAction)
-  promo_code_usage  promo_code_usage[]
+  id               Int                @id @default(autoincrement())
+  code             String             @unique
+  discount_percent Float
+  valid_from       DateTime           @default(now())
+  valid_until      DateTime
+  user_id          Int?
+  max_uses         Int?
+  current_uses     Int                @default(0)
+  is_active        Boolean            @default(true)
+  created_by       Int
+  created_at       DateTime           @default(now())
+  updated_at       DateTime           @updatedAt
+  promo_code_usage promo_code_usage[]
+  admins           admins             @relation(fields: [created_by], references: [id], onDelete: NoAction)
+  users            users?             @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([code])
   @@index([user_id])
@@ -397,10 +452,50 @@ model promo_code_usage {
   user_id        Int
   transaction_id Int          @unique
   used_at        DateTime     @default(now())
-  promo_codes    promo_codes  @relation(fields: [promo_code_id], references: [id], onDelete: Cascade)
-  users          users        @relation(fields: [user_id], references: [id], onDelete: Cascade)
   transactions   transactions @relation(fields: [transaction_id], references: [id], onDelete: Cascade)
+  users          users        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  promo_codes    promo_codes  @relation(fields: [promo_code_id], references: [id], onDelete: Cascade)
 
   @@index([promo_code_id])
   @@index([user_id])
+}
+
+model points_de_vente {
+  id                    Int                     @id @default(autoincrement())
+  name                  String
+  address               String
+  google_maps_url       String?
+  is_active             Boolean?                @default(true)
+  created_at            DateTime?               @default(now())
+  admin_points_de_vente admin_points_de_vente[]
+  transactions          transactions[]
+}
+
+model admin_points_de_vente {
+  id                Int             @id @default(autoincrement())
+  admin_id          Int
+  point_de_vente_id Int
+  created_at        DateTime?       @default(now())
+  points_de_vente   points_de_vente @relation(fields: [point_de_vente_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  admins            admins          @relation(fields: [admin_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([admin_id, point_de_vente_id], map: "sqlite_autoindex_admin_points_de_vente_1")
+  @@index([admin_id], map: "idx_admin_pdv_admin")
+  @@index([point_de_vente_id], map: "idx_admin_pdv_pdv")
+}
+
+model transaction_assignments {
+  id             Int          @id @default(autoincrement())
+  transaction_id Int
+  admin_id       Int
+  status         String?      @default("pending")
+  assigned_at    DateTime?    @default(now())
+  expires_at     DateTime
+  responded_at   DateTime?
+  admins         admins       @relation(fields: [admin_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  transactions   transactions @relation(fields: [transaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([transaction_id], map: "idx_transaction_assignments_transaction")
+  @@index([admin_id], map: "idx_transaction_assignments_admin")
+  @@index([status], map: "idx_transaction_assignments_status")
 }
